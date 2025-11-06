@@ -3,27 +3,26 @@
 		/* Base Options: */
 		"esModuleInterop": true,
 		"skipLibCheck": true,
-		"target": "es2022",
+		"target": "ES2022",
 		"verbatimModuleSyntax": false,
 		"allowJs": true,
 		"resolveJsonModule": true,
-		"moduleDetection": "force",
+		"module": "ESNext",
+        "moduleResolution": "Bundler",
+        "outDir": "dist",		
 		/* Strictness */
 		"noImplicitAny": false,
 		"noImplicitThis": true,
 		"strictNullChecks": false,
 		"strict": true,
+		"skipLibCheck": true,
 		"noUncheckedIndexedAccess": true,
 		/* If NOT transpiling with TypeScript: */
 		"moduleResolution": "Bundler",
-		"module": "es2022",
+		"module": "ES2022",
 		"noEmit": true,
-		"lib": ["es2022"],
-		"types": [
-			"./worker-configuration.d.ts",
-			"@types/node",
-			"@types/service-worker-mock"
-		]
+		"lib": ["ES2022"],
+		"types": ["@cloudflare/workers-types"]
 	},
 	"exclude": ["node_modules", "dist", "tests"],
 	"include": ["src", "worker-configuration.d.ts"]
