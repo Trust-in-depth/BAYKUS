@@ -6,7 +6,7 @@ import { TaskFetch } from "./endpoints/taskFetch";
 import { TaskList } from "./endpoints/taskList";
 export { Room } from "./room";
 import type { Env } from "./types";
-
+//deneme oto deploy çalışıyor mu diye?
 // Start a Hono app
 const app = new Hono<{ Bindings: Env }>();
 
