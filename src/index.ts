@@ -146,5 +146,11 @@ app.get("/rate/check", async (c) => {
 
 // Export the Hono app
 export { UserSessionDurableObject };
+export { ChatRoomDurableObject };
+export { NotificationDurableObject };
+export { PrivateChatDurableObject };
+export { UserMetadataDurableObject };
+export { UserStatusDurableObject };
+export { RateLimitDurableObject };
 export default app;
 
