@@ -12,7 +12,6 @@ bindings = [
   { name = "USER_METADATA", class_name = "UserMetadataDurableObject" },
   { name = "USER_STATUS", class_name = "UserStatusDurableObject" },
   { name = "RATE_LIMIT", class_name = "RateLimitDurableObject" }
-
 ]
 
 [[migrations]]
