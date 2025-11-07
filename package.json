@@ -3,22 +3,22 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "build": "npx tsc",
+    "build": "./node_modules/.bin/tsc",
     "deploy": "wrangler deploy",
     "dev": "wrangler dev",
     "start": "wrangler dev",
     "cf-typegen": "wrangler types"
   },
   "dependencies": {
-    "typescript": "^5.9.3",
     "chanfana": "^2.6.3",
     "hono": "^4.6.20",
+    "typescript": "^5.9.3",
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^4.20251106.1",
     "@types/node": "22.13.0",
     "@types/service-worker-mock": "^2.0.4",
     "wrangler": "^4.45.3"
   }
 }
-
