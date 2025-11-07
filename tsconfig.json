@@ -2,13 +2,11 @@
 	"compilerOptions": {
 		/* Base Options: */
 		"esModuleInterop": true,
-		"skipLibCheck": true,
 		"target": "ES2022",
 		"verbatimModuleSyntax": false,
 		"allowJs": true,
 		"resolveJsonModule": true,
 		"module": "ESNext",
-        "moduleResolution": "Bundler",
         "outDir": "dist",		
 		/* Strictness */
 		"noImplicitAny": false,
@@ -19,7 +17,6 @@
 		"noUncheckedIndexedAccess": true,
 		/* If NOT transpiling with TypeScript: */
 		"moduleResolution": "Bundler",
-		"module": "ES2022",
 		"noEmit": true,
 		"lib": ["ES2022"],
 		"types": ["@cloudflare/workers-types"]
