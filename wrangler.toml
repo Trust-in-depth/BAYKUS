@@ -1,0 +1,47 @@
+name = "baykus"
+main = "src/index.ts"
+compatibility_date = "2025-11-02"
+
+[durable_objects]
+bindings = [
+  { name = "ROOM", class_name = "Room" }
+]
+
+name = "baykus"
+main = "src/index.ts"
+compatibility_date = "2025-11-07"
+
+[[durable_objects.bindings]]
+name = "USER_SESSION"
+class_name = "UserSessionDurableObject"
+
+[[durable_objects.bindings]]
+name = "CHAT_ROOM"
+class_name = "ChatRoomDurableObject"
+
+[[durable_objects.bindings]]
+name = "NOTIFICATION"
+class_name = "NotificationDurableObject"
+
+[[durable_objects.bindings]]
+name = "PRIVATE_CHAT"
+class_name = "PrivateChatDurableObject"
+
+[[durable_objects.bindings]]
+name = "USER_METADATA"
+class_name = "UserMetadataDurableObject"
+
+[[durable_objects.bindings]]
+name = "USER_STATUS"
+class_name = "UserStatusDurableObject"
+
+[[durable_objects.bindings]]
+name = "RATE_LIMIT"
+class_name = "RateLimitDurableObject"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room"]
+
+[observability]
+enabled = true
