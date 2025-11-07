@@ -29,5 +29,6 @@ new_classes = [
   "UserStatusDurableObject",
   "RateLimitDurableObject"
 ]
+
 [observability]
 enabled = true
