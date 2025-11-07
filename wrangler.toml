@@ -16,7 +16,18 @@ bindings = [
 
 [[migrations]]
 tag = "v1"
-new_sqlite_classes = ["Room"]
+new_classes = ["Room"]
 
+[[migrations]]
+tag = "v2"
+new_classes = [
+  "UserSessionDurableObject",
+  "ChatRoomDurableObject",
+  "NotificationDurableObject",
+  "PrivateChatDurableObject",
+  "UserMetadataDurableObject",
+  "UserStatusDurableObject",
+  "RateLimitDurableObject"
+]
 [observability]
 enabled = true
