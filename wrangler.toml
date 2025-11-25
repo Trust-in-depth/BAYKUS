@@ -32,3 +32,42 @@ new_sqlite_classes = [
 
 [observability]
 enabled = true
+
+
+# Cloudflare R2 Binding'leri (Dosya Depolama)
+# Bunlar 'logs', 'media', 'messages', 'notes', 'whiteboards' kovalarına karşılık gelir.
+
+[[r2_buckets]]
+binding = "LOG_FILES"
+bucket_name = "logs"
+
+[[r2_buckets]]
+binding = "MEDIA_FILES"
+bucket_name = "media" # Profil resimleri, paylaşılan görseller
+
+[[r2_buckets]]
+binding = "MESSAGE_STORE"
+bucket_name = "messages" # Gerekliyse mesaj geçmişini yedeklemek için
+
+[[r2_buckets]]
+binding = "USER_NOTES"
+bucket_name = "notes"
+
+[[r2_buckets]]
+binding = "WHITEBOARD_DATA"
+bucket_name = "whiteboards"
+
+[[r2_buckets]]
+binding = "BAYKUS_FRONTEND_ASSETS" # Frontend statik dosyaları için (index.html, js, css)
+bucket_name = "baykus-frontend"
+
+[[d1_databases]]
+binding = "BAYKUS_DB"
+database_name = "baykus_db"
+database_id = "a90bb2ee-fdb9-45d4-9d14-1077dfed5309"
+
+
+# Ortam Değişkenleri (Workers kodunda kullanılacak)
+[vars]
+# JWT oluşturma ve doğrulama için kullanılacak gizli anahtar
+JWT_SECRET = "A.%1s_3,:L0_A45.;-R_J0;A-!_Ge.2:o!"
