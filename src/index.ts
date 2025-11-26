@@ -141,8 +141,8 @@ app.get("/rate/check", async (c) => {
 //  return response;
 //});
 
-// You may also register routes for non OpenAPI directly on Hono
-// app.get('/test', (c) => c.text('Hono!'))
+//You may also register routes for non OpenAPI directly on Hono
+app.get('/test', (c) => c.text('Hono!'))
 
 // Export the Hono app
 export { UserSessionDurableObject };
