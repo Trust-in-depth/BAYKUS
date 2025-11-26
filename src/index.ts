@@ -43,6 +43,12 @@ const openapi = fromHono(app, {
   docs_url: "/docs", // Dokümantasyon /docs adresine taşındı.
 });
 
+// Arkadaş Ekleme
+app.post("/api/friends/add", async (c: AppContext) => {
+    const payload = c.get('userPayload');
+    return handleAddFriend(c.req.raw, c.env, payload); // <<< BURADA ÇAĞRILIYOR
+});
+
 // Tasks rotaları (OpenAPI'de kalır)
 openapi.get("/api/tasks", TaskList);
 openapi.post("/api/tasks", TaskCreate);
