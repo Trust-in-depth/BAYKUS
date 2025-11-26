@@ -89,6 +89,9 @@ export async function handleLogin(request: Request, env: Env): Promise<Response>
             'urn:baykus:name': user.username,
         })
         .setProtectedHeader({ alg })
+        .setIssuedAt() // <<< Token oluşturulma zamanı (iat)
+        .setIssuer('baykus-auth-service') // <<<oken'ı veren servis (iss)
+        .setAudience('baykus-platform') // <<< Token'ın hedefi (aud)
         .setExpirationTime('24h')
         .sign(secret);
 
