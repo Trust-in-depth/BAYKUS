@@ -28,13 +28,14 @@ async function hashPassword(password: string): Promise<string> {
 // KAYIT (REGISTER)
 export async function handleRegister(request: Request, env: Env): Promise<Response> {
     try {
-        const body = await request.json() as { email?: string; password?: string; username?: string };
-        const { email, password, username } = body as RegisterBody ;
+        // Tip ataması kullanılarak body'den gerekli veriler alınır.
+        const { email, password, username } = await request.json() as RegisterBody;
+        
         if (!email || !password || !username) {
             return new Response(JSON.stringify({ error: "Gerekli alanlar eksik." }), { status: 400 });
         }
         
-        // E-mail Benzersizlik Kontrolü (Veritabanında UNIQUE kısıtlaması olmadığı için kodda kontrol şarttır)
+        // E-mail Benzersizlik Kontrolü
         const existingUser = await env.BAYKUS_DB.prepare("SELECT id FROM users WHERE email = ?").bind(email).first('id');
         if (existingUser) {
             return new Response(JSON.stringify({ error: "E-posta zaten kayıtlı." }), { status: 409 });
@@ -43,9 +44,13 @@ export async function handleRegister(request: Request, env: Env): Promise<Respon
         const hashedPassword = await hashPassword(password);
         const userId = crypto.randomUUID();
 
+        // >>> KRİTİK DÜZELTME: Kullanıcı adını veritabanı kısıtlamasına uyması için küçük harfe çeviriyoruz
+        const lowerCaseUsername = username.toLowerCase(); 
+
         await env.BAYKUS_DB.prepare(
+            // SQL sorgusunda 'username' alanına lowerCaseUsername'i, 'name' alanına orijinal username'i bind ediyoruz.
             "INSERT INTO users (id, email, hashed_password, username, name, created_at) VALUES (?, ?, ?, ?, ?, ?)"
-        ).bind(userId, email, hashedPassword, username, username, new Date().toISOString()).run();
+        ).bind(userId, email, hashedPassword, lowerCaseUsername, username, new Date().toISOString()).run();
         
         return new Response(JSON.stringify({ message: "Kayıt başarılı.", userId: userId }), { status: 201 });
 
