@@ -37,28 +37,6 @@ import type { Env } from "./types";
 // Hono uygulamasını başlat
 const app = new Hono<{ Bindings: Env }>();
 
-// 4. ADIM: OpenAPI Rotasını /docs'a Taşıma ve Kök Rotayı Tanımlama
-// Kök dizin (/) artık Backend'in çalıştığını gösterecek.
-const openapi = fromHono(app, {
-  docs_url: "/docs", // Dokümantasyon /docs adresine taşındı.
-});
-
-// Arkadaş Ekleme
-app.post("/api/friends/add", async (c: AppContext) => {
-    const payload = c.get('userPayload');
-    return handleAddFriend(c.req.raw, c.env, payload); // <<< BURADA ÇAĞRILIYOR
-});
-
-// Tasks rotaları (OpenAPI'de kalır)
-openapi.get("/api/tasks", TaskList);
-openapi.post("/api/tasks", TaskCreate);
-openapi.get("/api/tasks/:taskSlug", TaskFetch);
-openapi.delete("/api/tasks/:taskSlug", TaskDelete);
-
-// Kök dizini (/) için kendi rotamızı tanımla
-app.get('/', (c) => c.text('Baykuş Workers Aktif ve Frontend Entegrasyonuna Hazır!'));
-app.get('/test', (c) => c.text('Hono!'));
-
 
 // --- 5. JWT KORUMASIZ ROTLAR (AUTHENTICATION) ---
 app.post("/api/auth/register", async (c) => {
@@ -69,10 +47,29 @@ app.post("/api/auth/login", async (c) => {
     return handleLogin(c.req.raw, c.env);
 });
 
+// Kök dizini (/) için kendi rotamızı tanımla
+app.get('/', (c) => c.text('Baykuş Workers Aktif ve Frontend Entegrasyonuna Hazır!'));
+app.get('/test', (c) => c.text('Hono!'));
 
-// --- 6. JWT KORUMALI ROTLAR (MIDDLEWARE UYGULAMASI) ---
+
+
+
+// --- 3. JWT KORUMALI ROTLAR (MIDDLEWARE UYGULAMASI) ---
 // Tüm /api/* rotalarına JWT kontrolünü uygular.
 app.use('/api/*', jwtAuthMiddleware); 
+
+// 4. ADIM: OpenAPI Rotasını /docs'a Taşıma ve Kök Rotayı Tanımlama
+// Kök dizin (/) artık Backend'in çalıştığını gösterecek.
+const openapi = fromHono(app, {
+  docs_url: "/docs", // Dokümantasyon /docs adresine taşındı.
+});
+
+// Tasks rotaları (OpenAPI'de kalır)
+openapi.get("/api/tasks", TaskList);
+openapi.post("/api/tasks", TaskCreate);
+openapi.get("/api/tasks/:taskSlug", TaskFetch);
+openapi.delete("/api/tasks/:taskSlug", TaskDelete);
+
 
 
 // 6A. D1 ve DO YÖNLENDİRMELERİ (Geliştirdiklerimiz)
