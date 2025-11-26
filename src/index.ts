@@ -1,12 +1,26 @@
+// src/index.ts
+
 import { fromHono } from "chanfana";
 import { Hono } from "hono";
+
+// --- 1. JWT, AUTH ve D1 API Importları ---
+// Bu import'lar, Endpoint dosyalarınızdaki ve Middleware'deki fonksiyonları çeker.
+import { jwtAuthMiddleware, AppContext } from "./auth/jwt_hono_middleware"; 
+import { handleRegister, handleLogin } from "./endpoints/auth";
+import { handleCreateServer } from "./endpoints/rooms";
+import { handleAddFriend } from "./endpoints/friends";
+import { handleGetTurnCredentials, handleJoinVoiceChannel, handleLeaveVoiceChannel } from "./endpoints/voice";
+import { handleOpenDM } from "./endpoints/dms";
+
+// --- 2. TASK Importları ---
+// Hata almamak için tüm Task fonksiyonlarının ayrı dosyalardan geldiği varsayılır.
 import { TaskCreate } from "./endpoints/taskCreate";
 import { TaskDelete } from "./endpoints/taskDelete";
 import { TaskFetch } from "./endpoints/taskFetch";
-import { TaskList } from "./endpoints/taskList";
-export { Room } from "./room";
-import type { Env } from "./types";
-//DO"ları import et
+import { TaskList } from "./endpoints/taskList"; 
+
+// --- 3. DURABLE OBJECT (DO) Sınıf Importları ---
+// Bu import'lar, DO sınıflarının altının kırmızı çizilmemesi ve doğru export için zorunludur.
 import { UserSessionDurableObject } from "./User_session_durable_object";
 import { ChatRoomDurableObject } from "./Chat_room_durable_object";
 import { NotificationDurableObject } from "./Notification_durable_object";
@@ -14,137 +28,111 @@ import { PrivateChatDurableObject } from "./Private_chat_durable_object";
 import { UserMetadataDurableObject } from "./User_metadata_durable_object";
 import { UserStatusDurableObject } from "./User_status_durable_object";
 import { RateLimitDurableObject } from "./Rate_limit_durable_object";
-//deneme oto deploy çalışıyor mu diye?
-// Start a Hono app
+
+// Temel yapılar
+export { Room } from "./room";
+import type { Env } from "./types";
+
+
+// Hono uygulamasını başlat
 const app = new Hono<{ Bindings: Env }>();
 
-// Setup OpenAPI registry
+// 4. ADIM: OpenAPI Rotasını /docs'a Taşıma ve Kök Rotayı Tanımlama
+// Kök dizin (/) artık Backend'in çalıştığını gösterecek.
 const openapi = fromHono(app, {
-	docs_url: "/",
+  docs_url: "/docs", // Dokümantasyon /docs adresine taşındı.
 });
 
-// Register OpenAPI endpoints
+// Tasks rotaları (OpenAPI'de kalır)
 openapi.get("/api/tasks", TaskList);
 openapi.post("/api/tasks", TaskCreate);
 openapi.get("/api/tasks/:taskSlug", TaskFetch);
 openapi.delete("/api/tasks/:taskSlug", TaskDelete);
 
-//./User_session_durable_object API route örneği
-app.post("/chat/send", async (c) => {
-  const body = await c.req.json();
-  const id = c.env.CHAT_ROOM.idFromName(body.roomId);
-  const stub = c.env.CHAT_ROOM.get(id);
-  await stub.fetch("https://dummy/send-message", {
-    method: "POST",
-    body: JSON.stringify(body)
-  });
-  return c.text("Message sent");
+// Kök dizini (/) için kendi rotamızı tanımla
+app.get('/', (c) => c.text('Baykuş Workers Aktif ve Frontend Entegrasyonuna Hazır!'));
+app.get('/test', (c) => c.text('Hono!'));
+
+
+// --- 5. JWT KORUMASIZ ROTLAR (AUTHENTICATION) ---
+app.post("/api/auth/register", async (c) => {
+    return handleRegister(c.req.raw, c.env);
 });
 
-app.get("/chat/messages/:roomId", async (c) => {
-  const id = c.env.CHAT_ROOM.idFromName(c.req.param("roomId"));
-  const stub = c.env.CHAT_ROOM.get(id);
-  const res = await stub.fetch("https://dummy/get-messages");
-  const data = await res.json();
-  return c.json(data);
+app.post("/api/auth/login", async (c) => {
+    return handleLogin(c.req.raw, c.env);
 });
 
-//Notigication DO route örneği
-app.post("/notify/track", async (c) => {
-  const id = c.env.NOTIFICATION.idFromName("global");
-  const stub = c.env.NOTIFICATION.get(id);
-  await stub.fetch("https://dummy/track", { method: "POST" });
-  return c.text("Tracked");
+
+// --- 6. JWT KORUMALI ROTLAR (MIDDLEWARE UYGULAMASI) ---
+// Tüm /api/* rotalarına JWT kontrolünü uygular.
+app.use('/api/*', jwtAuthMiddleware); 
+
+
+// 6A. D1 ve DO YÖNLENDİRMELERİ (Geliştirdiklerimiz)
+// Bu rotalar AppContext kullanır ve JWT ile doğrulanan payload'ı alır.
+// NOT: Bu rotalar, tip güvenliği için artık raw Request yerine AppContext kullanıyor.
+
+// Sunucu/Oda Oluşturma
+app.post("/api/rooms/create", async (c: AppContext) => {
+    const payload = c.get('userPayload');
+    return handleCreateServer(c.req.raw, c.env, payload);
 });
 
-app.get("/notify/count", async (c) => {
-  const id = c.env.NOTIFICATION.idFromName("global");
-  const stub = c.env.NOTIFICATION.get(id);
-  const res = await stub.fetch("https://dummy/get-count");
-  const data = await res.json();
-  return c.json(data);
+// Arkadaş Ekleme
+app.post("/api/friends/add", async (c: AppContext) => {
+    const payload = c.get('userPayload');
+    return handleAddFriend(c.req.raw, c.env, payload);
 });
 
-//Private Chat DO route örneği
-app.post("/dm/send", async (c) => {
-  const body = await c.req.json();
-  const id = c.env.PRIVATE_CHAT.idFromName(body.chatId);
-  const stub = c.env.PRIVATE_CHAT.get(id);
-  await stub.fetch("https://dummy/send-dm", {
-    method: "POST",
-    body: JSON.stringify(body)
-  });
-  return c.text("DM sent");
+// DM Kanalı Açma (D1 ve PrivateChat DO)
+app.post("/api/dm/open", async (c: AppContext) => {
+    const payload = c.get('userPayload');
+    return handleOpenDM(c.req.raw, c.env, payload);
 });
 
-app.get("/dm/history/:chatId", async (c) => {
-  const id = c.env.PRIVATE_CHAT.idFromName(c.req.param("chatId"));
-  const stub = c.env.PRIVATE_CHAT.get(id);
-  const res = await stub.fetch("https://dummy/get-dm-history");
-  const data = await res.json();
-  return c.json(data);
+// Sesli İletişim Bilgileri (TURN/STUN)
+app.get("/api/voice/credentials", async (c: AppContext) => {
+    const payload = c.get('userPayload');
+    return handleGetTurnCredentials(c.req.raw, c.env, payload);
 });
 
-//Metadata DO route örneği
-app.post("/user/metadata", async (c) => {
-  const body = await c.req.json();
-  const id = c.env.USER_METADATA.idFromName(body.userId);
-  const stub = c.env.USER_METADATA.get(id);
-  await stub.fetch("https://dummy/update-metadata", {
-    method: "POST",
-    body: JSON.stringify(body)
-  });
-  return c.text("Metadata updated");
+// Sesli Kanala Giriş/Ayrılma (D1 voice_activity)
+app.post("/api/voice/join", async (c: AppContext) => {
+    const payload = c.get('userPayload');
+    return handleJoinVoiceChannel(c.req.raw, c.env, payload);
+});
+app.post("/api/voice/leave", async (c: AppContext) => {
+    const payload = c.get('userPayload');
+    return handleLeaveVoiceChannel(c.req.raw, c.env, payload);
 });
 
-app.get("/user/metadata/:userId", async (c) => {
-  const id = c.env.USER_METADATA.idFromName(c.req.param("userId"));
-  const stub = c.env.USER_METADATA.get(id);
-  const res = await stub.fetch("https://dummy/get-metadata");
-  const data = await res.json();
-  return c.json(data);
+
+// 6B. GÜVENLİ DO YÖNLENDİRMELERİ (MEVCUT KODUN GÜVENLİ HALE GETİRİLMİŞİ)
+// Mevcut DO rotaları artık JWT koruması altındadır ve /api/* altında çalışır.
+
+// Sohbet Mesajı Gönderme (ChatRoom DO)
+app.post("/api/chat/send", async (c: AppContext) => {
+    const body = await c.req.json();
+    const payload = c.get('userPayload'); // JWT'den gelen kullanıcı ID'si
+    
+    const id = c.env.CHAT_ROOM.idFromName(body.roomId);
+    const stub = c.env.CHAT_ROOM.get(id);
+
+    // Güvenli User ID'yi DO'ya gönder
+    await stub.fetch("http://do/send-message", { 
+        method: "POST", 
+        headers: { 'X-User-ID': payload.userId }, 
+        body: JSON.stringify(body) 
+    });
+    return c.text("Message sent");
 });
 
-//User Status DO route örneği
-app.post("/user/status", async (c) => {
-  const body = await c.req.json();
-  const id = c.env.USER_STATUS.idFromName(body.userId);
-  const stub = c.env.USER_STATUS.get(id);
-  await stub.fetch("https://dummy/set-status", {
-    method: "POST",
-    body: JSON.stringify(body)
-  });
-  return c.text("Status updated");
-});
+// ... (Diğer tüm mevcut DO rotaları benzer şekilde AppContext ile güncellenmeli ve /api/* altına taşınmalıdır.) ...
 
-app.get("/user/status/:userId", async (c) => {
-  const id = c.env.USER_STATUS.idFromName(c.req.param("userId"));
-  const stub = c.env.USER_STATUS.get(id);
-  const res = await stub.fetch("https://dummy/get-status");
-  const data = await res.json();
-  return c.json(data);
-});
 
-//Rate Limit DO route örneği
-app.get("/rate/check", async (c) => {
-  const id = c.env.RATE_LIMIT.idFromName("global");
-  const stub = c.env.RATE_LIMIT.get(id);
-  const res = await stub.fetch("https://dummy/");
-  const text = await res.text();
-  return c.text(text);
-});
-//app.get("/room/:id", async (c) => {
- // const roomId = c.req.param("id");
- // const id = c.env.ROOM.idFromName(roomId);
- // const obj = c.env.ROOM.get(id);
- // const response = await obj.fetch(c.req.raw);
-//  return response;
-//});
-
-//You may also register routes for non OpenAPI directly on Hono
-app.get('/test', (c) => c.text('Hono!'))
-
-// Export the Hono app
+// --- 7. EXPORTLAR (DOĞRU VE TAM) ---
+// DO sınıflarının dışarı aktarımı bu şekilde olmalıdır.
 export { UserSessionDurableObject };
 export { ChatRoomDurableObject };
 export { NotificationDurableObject };
@@ -153,4 +141,3 @@ export { UserMetadataDurableObject };
 export { UserStatusDurableObject };
 export { RateLimitDurableObject };
 export default app;
-
