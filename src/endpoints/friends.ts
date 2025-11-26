@@ -27,6 +27,17 @@ const VALID_ACTIONS = ['accepted', 'rejected', 'blocked'];
 
 // --- 1. ARKADAŞLIK İSTEĞİ GÖNDERME (/api/friends/add) ---
 export async function handleAddFriend(request: Request, env: Env, payload: AuthPayload): Promise<Response> {
+   
+    // GÜVENLİK KONTROLÜ
+    if (!payload || !payload.userId) {
+         // Eğer JWT doğrulandıysa ama payload boşsa, Middleware doğru çalışmıyor demektir.
+         console.error("JWT PAYLOAD'I BOŞ GELDİ.");
+         return new Response(JSON.stringify({ error: "Oturum verisi eksik." }), { status: 403 });
+    }
+    
+    // Eğer buraya gelindiyse, payload.userId güvenli bir şekilde kullanılabilir.
+    const senderId = payload.userId;
+   
     // ... (Mantık 1: Kullanıcı bulma ve 'pending' kaydı) ...
     try {
         const { receiverUsername } = (await request.json()) as AddFriendBody;
