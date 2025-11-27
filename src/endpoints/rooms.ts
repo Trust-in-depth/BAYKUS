@@ -48,14 +48,12 @@ export async function handleCreateServer(request: Request, env: Env, payload: Au
 }
 
 
-// src/endpoints/rooms.ts (handleJoinServer fonksiyonunun Düzeltilmiş Hali)
 
 // Kullanıcının bir sunucuya katılımını yönetir
 export async function handleJoinServer(request: Request, env: Env, payload: AuthPayload): Promise<Response> {
     try {
         const { serverId } = await request.json() as { serverId: string };
         const userId = payload.userId;
-        const username = payload.username || 'Bilinmeyen Kullanıcı'; // Kullanıcı adını yayınlamak için al
 
         if (!serverId) {
             return new Response(JSON.stringify({ error: "Sunucu ID'si gerekli." }), { status: 400 });
@@ -74,42 +72,36 @@ export async function handleJoinServer(request: Request, env: Env, payload: Auth
         await env.BAYKUS_DB.prepare(
             "INSERT INTO server_members (id, server_id, user_id, role, joined_at) VALUES (?, ?, ?, ?, ?)"
         ).bind(crypto.randomUUID(), serverId, userId, 'member', new Date().toISOString()).run();
-        
-        // --- 3. Notification Durable Object'e yayınlama (broadcast) isteği gönderme (Presence) ---
+       
+        // 2A. Bildirim DO'ya katılım bilgisini gönder
+        // YENİ MANTIK: Diğer üyelere Bob'un katıldığını bildirme (Presence)
+        // 1. Sunucudaki diğer aktif kullanıcıların ID'lerini D1'den çekmeliyiz
+        const memberIdsResult = await env.BAYKUS_DB.prepare(
+            "SELECT user_id FROM server_members WHERE server_id = ? AND user_id != ?"
+        ).bind(serverId, userId).all(); // Yeni katılan kişi (userId) hariç herkesi çek
 
-        // Bildirim verisi (Consistent Presence Payload)
-        const messagePayload = {
-            type: "PRESENCE_UPDATE",
-            data: {
-                action: "JOIN", // Katılma eylemi
-                userId: userId,
-                username: username,
-                serverId: serverId,
-                timestamp: Date.now()
-            }
-        };
+        const memberIds = memberIdsResult.results.map((r: any) => r.user_id);
 
-        // YENİ MANTIK: Sadece global Notification DO'ya tek bir istek gönder
-        const notificationId = env.NOTIFICATION.idFromName("global"); // SADECE GLOBAL DO KULLANILIR
-        const notificationStub = env.NOTIFICATION.get(notificationId);
+        // 2. Her üyeye bildirim göndermek için döngü
+        for (const memberId of memberIds) {
+            // Her üyenin kendi Notification DO'sunu adresle
+            const notificationId = env.NOTIFICATION.idFromName(memberId);
+            const stub = env.NOTIFICATION.get(notificationId);
 
-        // DO'nun beklediği kısa rota: "/presence" (DO'ya yönlendirme için URL oluşturulur)
-        const doUrl = new URL("http://do/presence"); 
-        
-        // Tek bir POST isteği ile global NDO'yu tetikle
-        await notificationStub.fetch(doUrl.toString(), {
-            method: "POST",
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(messagePayload),
-        }).catch(e => console.error(`Katılım bildirimi yayınlanırken hata oluştu:`, e));
+            // Notification DO'suna POST isteği gönder (broadcast etmesi için)
+            await stub.fetch("http://do/notify/presence", { // <-- Notification DO'sundaki rotanız
+                method: 'POST',
+                body: JSON.stringify({
+                    type: 'USER_JOINED_SERVER',
+                    userId: userId, // Katılan kişi
+                    serverId: serverId,
+                    username: payload.username // Katılanın kullanıcı adı
+                })
+            }).catch(e => console.error(`Bildirim gönderilemedi: ${memberId}`));
+        }
 
-
-        // 4. Başarılı yanıt
-        return new Response(JSON.stringify({ 
-            message: "Sunucuya başarıyla katıldınız.", 
-            serverId,
-            broadcast_status: "Katılım bildirimi yayınlandı."
-        }), { status: 200 });
+        // 3. Başarılı yanıt
+        return new Response(JSON.stringify({ message: "Sunucuya başarıyla katıldınız.", serverId }), { status: 200 });
 
     } catch (error) {
         console.error("Sunucuya katılma hatası:", error);
@@ -117,20 +109,22 @@ export async function handleJoinServer(request: Request, env: Env, payload: Auth
     }
 }
 
+
 // src/endpoints/rooms.ts (handleLeaveServer fonksiyonunun Düzeltilmiş Hali)
+
+// src/endpoints/rooms.ts içine handleLeaveServer fonksiyonunu ekleyin
 
 export async function handleLeaveServer(request: Request, env: Env, payload: AuthPayload): Promise<Response> {
     try {
-        // Sunucu ID'si alınır
         const { serverId } = await request.json() as { serverId: string };
         const userId = payload.userId;
-        const username = payload.username || 'Bilinmeyen Kullanıcı'; // Payload'da username olduğunu varsayıyoruz
+        const username = payload.username || 'Bilinmeyen Kullanıcı';
 
         if (!serverId) {
             return new Response(JSON.stringify({ error: "Sunucu ID'si gerekli." }), { status: 400 });
         }
 
-        // --- 1. D1'den üyelik kaydını silme ---
+        // --- 1. D1'den üyelik kaydını silme (Ayrılma Eylemi) ---
         const deleteQuery = env.BAYKUS_DB.prepare(
             "DELETE FROM server_members WHERE server_id = ? AND user_id = ?"
         );
@@ -139,41 +133,45 @@ export async function handleLeaveServer(request: Request, env: Env, payload: Aut
         const changes = (result as any).changes || 0;
 
         if (changes === 0) {
-            return new Response(JSON.stringify({ error: "Bu sunucuda aktif üyelik bulunamadı." }), { status: 404 });
+            return new Response(JSON.stringify({ message: "Bu sunucuda aktif üyelik bulunamadı." }), { status: 404 });
         }
         
         // --- 2. Notification Durable Object'e yayınlama (broadcast) isteği gönderme ---
         
+        // Sunucudaki diğer aktif kullanıcıların ID'lerini D1'den çekmeliyiz (Kayıt silindiği için eski üyeler)
+        const memberIdsResult = await env.BAYKUS_DB.prepare(
+            "SELECT user_id FROM server_members WHERE server_id = ?"
+        ).bind(serverId).all();
+
+        const memberIds = memberIdsResult.results.map((r: any) => r.user_id);
+
         // Bildirim verisi (Consistent Presence Payload)
         const messagePayload = {
             type: "PRESENCE_UPDATE",
             data: {
-                action: "LEAVE", // Ayrılma eylemi
-                userId: userId,
+                action: "LEAVE", // <<< EYLEM: AYRILMA
+                userId: userId, // Ayrılan kişi
                 username: username,
                 serverId: serverId,
                 timestamp: Date.now()
             }
         };
 
-        // Notification DO'ya yönlendirme
-        const notificationId = env.NOTIFICATION.idFromName("global");
-        const notificationStub = env.NOTIFICATION.get(notificationId);
+        // 3. Her üyeye bildirim göndermek için döngü (Join fonksiyonu ile aynı mantık)
+        for (const memberId of memberIds) {
+            // Her üyenin kendi Notification DO'sunu adresle
+            const notificationId = env.NOTIFICATION.idFromName(memberId);
+            const stub = env.NOTIFICATION.get(notificationId);
 
-        // ÖNEMLİ: DO'nun beklediği kısa rota: "/presence" (Daha önce NDO'da bu şekilde düzeltilmişti)
-        const doUrl = new URL("http://do/presence"); 
-        
-        await notificationStub.fetch(doUrl.toString(), {
-            method: "POST",
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(messagePayload),
-        });
+            // Notification DO'suna POST isteği gönder (broadcast etmesi için)
+            await stub.fetch("http://do/notify/presence", { // Workers bu rotayı DO'ya iletir
+                method: 'POST',
+                body: JSON.stringify(messagePayload)
+            }).catch(e => console.error(`Ayrılma bildirimi gönderilemedi: ${memberId}`));
+        }
 
-        // --- 3. Başarılı yanıtı döndürme ---
-        return new Response(JSON.stringify({ 
-            message: "Sunucudan başarıyla ayrıldınız.",
-            broadcast_status: "Ayrılma bildirimi yayınlandı."
-        }), { status: 200 });
+        // 4. Başarılı yanıt
+        return new Response(JSON.stringify({ message: "Sunucudan başarıyla ayrıldınız.", serverId }), { status: 200 });
 
     } catch (error) {
         console.error("Sunucudan ayrılma hatası:", error);
