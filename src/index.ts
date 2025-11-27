@@ -57,10 +57,11 @@ app.post("/notify/track", async (c) => {
         // İsteğin URL'sini yeniden yazın (sadece /track kalmalı)
     const newUrl = new URL(c.req.url); // Orijinal URL'yi al
     newUrl.pathname = "/track"; // DO'nun beklediği rotaya çevir
-    
+    // Yeni URL'yi kullanarak Request nesnesini klonla
+    const newRequest = new Request(newUrl.toString(), c.req.raw);
     // DO'nun kendi içindeki /track rotasına isteği yönlendir
     // c.req.raw kullanarak orijinal isteği olduğu gibi iletmek en temizidir.
-    return stub.fetch(c.req.raw); 
+    return stub.fetch(newRequest); 
 });
 
 app.get("/notify/count", async (c) => {
