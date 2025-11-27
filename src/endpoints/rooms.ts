@@ -68,11 +68,30 @@ export async function handleJoinServer(request: Request, env: Env, payload: Auth
             return new Response(JSON.stringify({ message: "Zaten bu sunucunun üyesisiniz." }), { status: 200 });
         }
 
-        // 2. server_members tablosuna kayıt ekle
-        await env.BAYKUS_DB.prepare(
-            "INSERT INTO server_members (id, server_id, user_id, role, joined_at,left_at) VALUES (?, ?, ?, ?, ?, ?)"
-        ).bind(crypto.randomUUID(), serverId, userId, 'member', new Date().toISOString(), null ).run();
-       
+     // 2. ADIM: Daha önce ayrılmış bir kayıt var mı kontrol et (Pasif Kayıt)
+const previousMember = await env.BAYKUS_DB.prepare(
+    "SELECT id FROM server_members WHERE server_id = ? AND user_id = ?"
+).bind(serverId, userId).first('id');
+
+
+if (previousMember) {
+    // Kayıt VARDI (pasif). UPDATE ile aktif hale getir (Soft Un-Delete).
+    await env.BAYKUS_DB.prepare(
+        "UPDATE server_members SET left_at = NULL, joined_at = ? WHERE id = ?"
+    ).bind(new Date().toISOString(), previousMember).run();
+    
+    // NDO Bildirimi gönderilir (JOIN)
+    // ... (NDO yayınlama kodu buraya gelecek) ...
+    
+    return new Response(JSON.stringify({ message: "Sunucuya başarıyla katıldınız (yeniden aktif edildi)." }), { status: 200 });
+
+} else {
+    // Kayıt HİÇ YOKTU. YENİ KAYIT EKLE (İlk katılım)
+    await env.BAYKUS_DB.prepare(
+        "INSERT INTO server_members (id, server_id, user_id, role, joined_at, left_at) VALUES (?, ?, ?, ?, ?, NULL)"
+    ).bind(crypto.randomUUID(), serverId, userId, 'member', new Date().toISOString()).run();
+    
+
         // 2A. Bildirim DO'ya katılım bilgisini gönder
         // YENİ MANTIK: Diğer üyelere Bob'un katıldığını bildirme (Presence)
         // 1. Sunucudaki diğer aktif kullanıcıların ID'lerini D1'den çekmeliyiz
@@ -102,7 +121,7 @@ export async function handleJoinServer(request: Request, env: Env, payload: Auth
 
         // 3. Başarılı yanıt
         return new Response(JSON.stringify({ message: "Sunucuya başarıyla katıldınız.", serverId }), { status: 200 });
-
+    }
     } catch (error) {
         console.error("Sunucuya katılma hatası:", error);
         return new Response(JSON.stringify({ error: "Sunucu hatası." }), { status: 500 });
