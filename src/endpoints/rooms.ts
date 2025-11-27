@@ -70,8 +70,8 @@ export async function handleJoinServer(request: Request, env: Env, payload: Auth
 
         // 2. server_members tablosuna kayıt ekle
         await env.BAYKUS_DB.prepare(
-            "INSERT INTO server_members (id, server_id, user_id, role, joined_at,left_at) VALUES (?, ?, ?, ?, ?)"
-        ).bind(crypto.randomUUID(), serverId, userId, 'member', new Date().toISOString()).run();
+            "INSERT INTO server_members (id, server_id, user_id, role, joined_at,left_at) VALUES (?, ?, ?, ?, ?, ?)"
+        ).bind(crypto.randomUUID(), serverId, userId, 'member', new Date().toISOString(), null ).run();
        
         // 2A. Bildirim DO'ya katılım bilgisini gönder
         // YENİ MANTIK: Diğer üyelere Bob'un katıldığını bildirme (Presence)
