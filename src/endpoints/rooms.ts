@@ -144,11 +144,15 @@ export async function handleLeaveServer(request: Request, env: Env, payload: Aut
 
 // --- 1. D1'de üyeliği Soft Delete yapma ---
         // Kaydı silmek yerine left_at sütununu güncelle
+// 1. Üyeliği bul ve güncelle. left_at IS NULL olan kaydı arıyoruz.
         const updateQuery = env.BAYKUS_DB.prepare(
-            "UPDATE server_members SET left_at = ? WHERE server_id = ? AND user_id = ? AND left_at IS NULL"
+            // Yeni ayrılma zamanı olarak SQL fonksiyonu kullanılıyor
+            "UPDATE server_members SET left_at = strftime('%s','now') WHERE server_id = ? AND user_id = ? AND left_at IS NULL" 
+            // VEYA: Eğer left_at TEXT ise, yine new Date().toISOString() kullanmaya devam edin.
         );
         
-        const result = await updateQuery.bind(new Date().toISOString(), serverId, userId).run();
+        // Sadece ServerId ve UserId'yi bind ediyoruz.
+        const result = await updateQuery.bind(serverId, userId).run();
         const changes = (result as any).changes || 0;
 
         if (changes === 0) {
