@@ -49,18 +49,17 @@ app.post("/api/auth/login", async (c) => {
     return handleLogin(c.req.raw, c.env);
 });
 
-
 app.post("/notify/track", async (c) => {
     // "global" adını kullanarak tek bir Notification DO örneğini adresliyoruz
     const id = c.env.NOTIFICATION.idFromName("global"); 
     const stub = c.env.NOTIFICATION.get(id);
-        // İsteğin URL'sini yeniden yazın (sadece /track kalmalı)
-    const newUrl = new URL(c.req.url); // Orijinal URL'yi al
-    newUrl.pathname = "/track"; // DO'nun beklediği rotaya çevir
-    // Yeni URL'yi kullanarak Request nesnesini klonla
+    
+    // DÜZELTME: İsteğin URL'sini yeniden yazın (DO sadece "/track" bekliyor)
+    const newUrl = new URL(c.req.url);
+    newUrl.pathname = "/track"; 
+    
+    // Yeni, kısa URL'li Request nesnesini oluştur ve DO'ya gönder
     const newRequest = new Request(newUrl.toString(), c.req.raw);
-    // DO'nun kendi içindeki /track rotasına isteği yönlendir
-    // c.req.raw kullanarak orijinal isteği olduğu gibi iletmek en temizidir.
     return stub.fetch(newRequest); 
 });
 
@@ -68,12 +67,13 @@ app.get("/notify/count", async (c) => {
     // Aynı 'global' DO örneğinden sayacı çek
     const id = c.env.NOTIFICATION.idFromName("global");
     const stub = c.env.NOTIFICATION.get(id);
-    // URL'yi /get-count olarak yeniden yazın
+    
+    // DÜZELTME: İsteğin URL'sini yeniden yazın (DO sadece "/get-count" bekliyor)
     const newUrl = new URL(c.req.url); 
     newUrl.pathname = "/get-count";
-    // Yeni Request nesnesini DO'ya ilet
+    
+    // Yeni, kısa URL'li Request nesnesini oluştur ve DO'ya gönder
     const newRequest = new Request(newUrl.toString(), c.req.raw);
-    // c.req.raw kullanarak orijinal isteği olduğu gibi ilet
     return stub.fetch(newRequest); 
 });
 
