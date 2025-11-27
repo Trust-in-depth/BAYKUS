@@ -88,8 +88,8 @@ if (previousMember) {
 } else {
     // Kayıt HİÇ YOKTU. YENİ KAYIT EKLE (İlk katılım)
     await env.BAYKUS_DB.prepare(
-        "INSERT INTO server_members (id, server_id, user_id, role, joined_at, left_at) VALUES (?, ?, ?, ?, ?, NULL)"
-    ).bind(crypto.randomUUID(), serverId, userId, 'member', new Date().toISOString()).run();
+        "INSERT INTO server_members (id, server_id, user_id, role, joined_at, left_at) VALUES (?, ?, ?, ?, strftime('%s','now'), NULL)"
+    ).bind(crypto.randomUUID(), serverId, userId, 'member').run();
     
 
         // 2A. Bildirim DO'ya katılım bilgisini gönder
