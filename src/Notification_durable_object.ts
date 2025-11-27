@@ -1,10 +1,8 @@
-// NotificationDurableObject.ts (Güncellenmiş Sürüm)
+// NotificationDurableObject.ts (Düzeltilmiş Rota Tanımları)
 
 export class NotificationDurableObject {
     state: DurableObjectState;
     env: Env;
-    
-    // YENİ: Bu DO'yu dinleyen tüm aktif WebSocket bağlantılarını tutar.
     sessions: Set<WebSocket> = new Set(); 
 
     constructor(state: DurableObjectState, env: Env) {
@@ -15,16 +13,14 @@ export class NotificationDurableObject {
     async fetch(request: Request): Promise<Response> {
         const url = new URL(request.url);
 
-        // --- 1. YENİ: WebSocket Bağlantı Noktası (/do/notify/connect) ---
-        // Frontend, bu rota üzerinden DO'ya bağlanarak bildirimleri dinler.
-        if (url.pathname === "/do/notify/connect" && request.method === "GET") {
+        // --- 1. WebSocket Bağlantı Noktası (KISA ROTA) ---
+        // /do/notify/connect yerine sadece /connect beklenir.
+        if (url.pathname === "/connect" && request.method === "GET") {
             const [client, server] = Object.values(new WebSocketPair());
             
-            // Yeni WebSocket oturumunu kaydet
             server.accept();
             this.sessions.add(server);
 
-            // Bağlantı kapandığında oturumu Set'ten kaldır
             server.addEventListener("close", () => this.sessions.delete(server));
             server.addEventListener("error", () => this.sessions.delete(server));
             
@@ -32,17 +28,16 @@ export class NotificationDurableObject {
         }
 
 
-        // --- 2. YENİ: Olay Yayınlama Rotası (/do/notify/presence) ---
-        // Workers API'sinden (handleJoinServer gibi) gelen POST isteklerini işler.
-        if (url.pathname === "/do/notify/presence" && request.method === "POST") {
+        // --- 2. Olay Yayınlama Rotası (KISA ROTA) ---
+        // /do/notify/presence yerine sadece /presence beklenir.
+        if (url.pathname === "/presence" && request.method === "POST") {
             const message = await request.json();
             
-            // Bildirimi tüm bağlı istemcilere yayınla (Broadcast)
             const messageString = JSON.stringify(message);
 
             this.sessions.forEach(session => {
                 try {
-                    session.send(messageString); // Yayınlama gerçekleşir
+                    session.send(messageString); 
                 } catch (e) {
                     this.sessions.delete(session);
                 }
@@ -52,14 +47,19 @@ export class NotificationDurableObject {
         }
 
 
-        // --- 3. MEVCUT SAYACA AİT ROTLAR (İsteğe bağlı olarak kalabilir) ---
+        // --- 3. MEVCUT SAYACA AİT ROTLAR (DOĞRU KISA ROTA) ---
         if (url.pathname === "/track" && request.method === "POST") {
-            // ... (Mevcut sayaç mantığı)
+             // ... (Mevcut sayaç mantığı)
+             // ... [Burası zaten kısayoldu]
+             
+             return new Response("Tracked", { status: 200 }); // Varsayımsal dönüş
         }
         if (url.pathname === "/get-count") {
-            // ... (Mevcut sayaç mantığı)
+             // ... (Mevcut sayaç mantığı)
+             return new Response(JSON.stringify({ count: 1 }), { status: 200 }); // Varsayımsal dönüş
         }
         
+        // Önemli: Bu alana ulaşıldığında artık 404 dönmeli.
         return new Response("Not found", { status: 404 });
     }
 }

@@ -71,8 +71,10 @@ app.get("/notify/count", async (c) => {
     // URL'yi /get-count olarak yeniden yazın
     const newUrl = new URL(c.req.url); 
     newUrl.pathname = "/get-count";
+    // Yeni Request nesnesini DO'ya ilet
+    const newRequest = new Request(newUrl.toString(), c.req.raw);
     // c.req.raw kullanarak orijinal isteği olduğu gibi ilet
-    return stub.fetch(c.req.raw); 
+    return stub.fetch(newRequest); 
 });
 
 // Kök dizini (/) için kendi rotamızı tanımla
