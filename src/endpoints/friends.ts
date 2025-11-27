@@ -102,8 +102,10 @@ export async function handleUpdateFriendStatus(request: Request, env: Env, paylo
             }
             
             return new Response(JSON.stringify({ message: "İstek başarıyla reddedildi.", status: 'rejected' }), { status: 200 });
-
-        } else if (newStatus === 'accepted') {
+       }
+         
+         
+         else if (newStatus === 'accepted') {
             // KABUL ETME EYLEMİ: Durumu 'pending'ten 'accepted'e çevir.
             const updateQuery = env.BAYKUS_DB.prepare(
                 `UPDATE friends SET status = ?, updated_at = ? WHERE user_id = ? AND friend_id = ? AND status = 'pending'`
@@ -117,9 +119,27 @@ export async function handleUpdateFriendStatus(request: Request, env: Env, paylo
             return new Response(JSON.stringify({ message: "Arkadaşlık isteği kabul edildi.", status: 'accepted' }), { status: 200 });
         }
 
+
+        else if (newStatus === 'blocked') { 
+    // YENİ EKLENEN BLOCKED MANTIĞI: Var olan ilişkiyi 'blocked' durumuna günceller.
+            const blockQuery = env.BAYKUS_DB.prepare(
+            `UPDATE friends SET status = ?, updated_at = ? WHERE (user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)`
+            );
+             // Hem normal sıralamayı (user1, user2) hem de ters sıralamayı (user2, user1) kontrol ederek güncelleriz.
+            const result = (await blockQuery.bind(newStatus, new Date().toISOString(), user1, user2, user2, user1).run());
+            const changes =(result as any).changes || (result as any).meta.changes || 0;
+                if (changes === 0) {
+                // Eğer güncellenen bir kayıt yoksa (yani yeni engelleme)
+                    return new Response(JSON.stringify({ error: "Engellenecek mevcut bir ilişki bulunamadı." }), { status: 404 });
+                }
+        return new Response(JSON.stringify({ message: "Kullanıcı başarıyla engellendi.", status: 'blocked' }), { status: 200 });
+        }
+
         return new Response(JSON.stringify({ message: `Durum güncellendi: ${newStatus}` }), { status: 200 });
 
-    } catch (error) {
+    } 
+    
+    catch (error) {
         console.error("Durum güncelleme hatası:", error);
         return new Response(JSON.stringify({ error: "Sunucu hatası." }), { status: 500 });
     }

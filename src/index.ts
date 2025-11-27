@@ -11,7 +11,7 @@ import { handleCreateServer } from "./endpoints/rooms";
 import { handleAddFriend } from "./endpoints/friends";
 import { handleGetTurnCredentials, handleJoinVoiceChannel, handleLeaveVoiceChannel } from "./endpoints/voice";
 import { handleOpenDM } from "./endpoints/dms";
-
+import { handleUpdateFriendStatus } from "./endpoints/friends"; 
 // --- 2. TASK Importları ---
 // Hata almamak için tüm Task fonksiyonlarının ayrı dosyalardan geldiği varsayılır.
 import { TaskCreate } from "./endpoints/taskCreate";
@@ -80,6 +80,12 @@ openapi.delete("/api/tasks/:taskSlug", TaskDelete);
 app.post("/api/rooms/create", async (c: AppContext) => {
     const payload = c.get('userPayload');
     return handleCreateServer(c.req.raw, c.env, payload);
+});
+
+// Yeni Arkadaşlık Durumu Güncelleme Rotası (Accept/Reject/Block işlemleri için)
+app.post("/api/friends/update", async (c: AppContext) => {
+    const payload = c.get('userPayload');
+    return handleUpdateFriendStatus(c.req.raw, c.env, payload);
 });
 
 // Arkadaş Ekleme
