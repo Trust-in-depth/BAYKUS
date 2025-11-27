@@ -13,7 +13,7 @@ import { handleGetTurnCredentials, handleJoinVoiceChannel, handleLeaveVoiceChann
 import { handleOpenDM } from "./endpoints/dms";
 import { handleUpdateFriendStatus } from "./endpoints/friends"; 
 import { handleUnfriend } from "./endpoints/friends";
-
+import {handleJoinServer} from "./endpoints/rooms";
 // --- 2. TASK Importları ---
 // Hata almamak için tüm Task fonksiyonlarının ayrı dosyalardan geldiği varsayılır.
 import { TaskCreate } from "./endpoints/taskCreate";
@@ -125,6 +125,12 @@ app.post("/api/voice/leave", async (c: AppContext) => {
     return handleLeaveVoiceChannel(c.req.raw, c.env, payload);
 });
 
+
+// src/index.ts içinde, JWT korumalı rotalara ekleyin
+app.post("/api/servers/join", async (c: AppContext) => {
+    const payload = c.get('userPayload');
+    return handleJoinServer(c.req.raw, c.env, payload);
+});
 
 // 6B. GÜVENLİ DO YÖNLENDİRMELERİ (MEVCUT KODUN GÜVENLİ HALE GETİRİLMİŞİ)
 // Mevcut DO rotaları artık JWT koruması altındadır ve /api/* altında çalışır.

@@ -46,3 +46,38 @@ export async function handleCreateServer(request: Request, env: Env, payload: Au
         return new Response(JSON.stringify({ error: "Sunucu hatası." }), { status: 500 });
     }
 }
+
+
+
+// Kullanıcının bir sunucuya katılımını yönetir
+export async function handleJoinServer(request: Request, env: Env, payload: AuthPayload): Promise<Response> {
+    try {
+        const { serverId } = await request.json() as { serverId: string };
+        const userId = payload.userId;
+
+        if (!serverId) {
+            return new Response(JSON.stringify({ error: "Sunucu ID'si gerekli." }), { status: 400 });
+        }
+
+        // 1. Zaten üye mi kontrol et
+        const existingMember = await env.BAYKUS_DB.prepare(
+            "SELECT id FROM server_members WHERE server_id = ? AND user_id = ?"
+        ).bind(serverId, userId).first('id');
+
+        if (existingMember) {
+            return new Response(JSON.stringify({ message: "Zaten bu sunucunun üyesisiniz." }), { status: 200 });
+        }
+
+        // 2. server_members tablosuna kayıt ekle
+        await env.BAYKUS_DB.prepare(
+            "INSERT INTO server_members (id, server_id, user_id, role, joined_at) VALUES (?, ?, ?, ?, ?)"
+        ).bind(crypto.randomUUID(), serverId, userId, 'member', new Date().toISOString()).run();
+
+        // 3. Başarılı yanıt
+        return new Response(JSON.stringify({ message: "Sunucuya başarıyla katıldınız.", serverId }), { status: 200 });
+
+    } catch (error) {
+        console.error("Sunucuya katılma hatası:", error);
+        return new Response(JSON.stringify({ error: "Sunucu hatası." }), { status: 500 });
+    }
+}
