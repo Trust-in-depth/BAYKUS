@@ -54,6 +54,9 @@ app.post("/notify/track", async (c) => {
     // "global" adını kullanarak tek bir Notification DO örneğini adresliyoruz
     const id = c.env.NOTIFICATION.idFromName("global"); 
     const stub = c.env.NOTIFICATION.get(id);
+        // İsteğin URL'sini yeniden yazın (sadece /track kalmalı)
+    const newUrl = new URL(c.req.url); // Orijinal URL'yi al
+    newUrl.pathname = "/track"; // DO'nun beklediği rotaya çevir
     
     // DO'nun kendi içindeki /track rotasına isteği yönlendir
     // c.req.raw kullanarak orijinal isteği olduğu gibi iletmek en temizidir.
@@ -64,7 +67,9 @@ app.get("/notify/count", async (c) => {
     // Aynı 'global' DO örneğinden sayacı çek
     const id = c.env.NOTIFICATION.idFromName("global");
     const stub = c.env.NOTIFICATION.get(id);
-    
+    // URL'yi /get-count olarak yeniden yazın
+    const newUrl = new URL(c.req.url); 
+    newUrl.pathname = "/get-count";
     // c.req.raw kullanarak orijinal isteği olduğu gibi ilet
     return stub.fetch(c.req.raw); 
 });
