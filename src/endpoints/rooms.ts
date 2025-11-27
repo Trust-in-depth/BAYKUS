@@ -123,15 +123,17 @@ export async function handleLeaveServer(request: Request, env: Env, payload: Aut
             return new Response(JSON.stringify({ error: "Sunucu ID'si gerekli." }), { status: 400 });
         }
 
-        // --- 1. D1'den üyelik kaydını silme ---
-        const deleteQuery = env.BAYKUS_DB.prepare(
-            "DELETE FROM server_members WHERE server_id = ? AND user_id = ?"
+// --- 1. D1'de üyeliği Soft Delete yapma ---
+        // Kaydı silmek yerine left_at sütununu güncelle
+        const updateQuery = env.BAYKUS_DB.prepare(
+            "UPDATE server_members SET left_at = ? WHERE server_id = ? AND user_id = ? AND left_at IS NULL"
         );
         
-        const result = await deleteQuery.bind(serverId, userId).run();
+        const result = await updateQuery.bind(new Date().toISOString(), serverId, userId).run();
         const changes = (result as any).changes || 0;
 
         if (changes === 0) {
+            // Hiçbir kayıt güncellenmediyse, ya zaten ayrılmıştır ya da üye değildir.
             return new Response(JSON.stringify({ error: "Bu sunucuda aktif üyelik bulunamadı." }), { status: 404 });
         }
         
@@ -159,10 +161,7 @@ for (const memberId of memberIds) {
 }
 
         // --- 3. Başarılı yanıtı döndürme ---
-        return new Response(JSON.stringify({ 
-            message: "Sunucudan başarıyla ayrıldınız.",
-            broadcast_status: "Ayrılma bildirimi yayınlandı."
-        }), { status: 200 });
+        return new Response(JSON.stringify({ message: "Sunucudan başarıyla ayrıldınız.", serverId }), { status: 200 });
 
     } catch (error) {
         console.error("Sunucudan ayrılma hatası:", error);
