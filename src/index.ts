@@ -71,7 +71,7 @@ app.get("/notify/count", async (c) => {
 
 // Kök dizini (/) için kendi rotamızı tanımla
 app.get('/', (c) => c.text('Baykuş Workers Aktif ve Frontend Entegrasyonuna Hazır!'));
-app.get('/test', (c) => c.text('Hono!'));
+app.get('/docs', (c) => c.text('Hono!'));
 
 
 
