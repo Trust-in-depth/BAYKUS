@@ -61,7 +61,7 @@ export async function handleJoinServer(request: Request, env: Env, payload: Auth
 
         // 1. Zaten üye mi kontrol et
         const existingMember = await env.BAYKUS_DB.prepare(
-            "SELECT id FROM server_members WHERE server_id = ? AND user_id = ?"
+            "SELECT id FROM server_members WHERE server_id = ? AND user_id = ? AND left_at IS NULL"
         ).bind(serverId, userId).first('id');
 
         if (existingMember) {
