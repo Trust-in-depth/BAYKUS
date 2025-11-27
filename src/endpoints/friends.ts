@@ -1,5 +1,3 @@
-// src/endpoints/friends.ts
-
 import { Env } from '../types';
 import { AuthPayload } from '../auth/jwt'; 
 
@@ -141,6 +139,44 @@ export async function handleUpdateFriendStatus(request: Request, env: Env, paylo
     
     catch (error) {
         console.error("Durum güncelleme hatası:", error);
+        return new Response(JSON.stringify({ error: "Sunucu hatası." }), { status: 500 });
+    }
+}
+
+
+// --- 1. ARKADAŞLIĞI SONLANDIRMA (/api/friends/add) ---
+
+export async function handleUnfriend(request: Request, env: Env, payload: AuthPayload): Promise<Response> {
+    try {
+        const { targetUserId } = (await request.json()) as { targetUserId: string };
+        const currentUserId = payload.userId;
+
+        if (!targetUserId || targetUserId === currentUserId) {
+            return new Response(JSON.stringify({ error: "Geçerli bir kullanıcı ID'si gerekli." }), { status: 400 });
+        }
+
+        // D1 kısıtlamasına uymak için ID'leri sırala
+        const user1 = currentUserId < targetUserId ? currentUserId : targetUserId;
+        const user2 = currentUserId > targetUserId ? currentUserId : targetUserId;
+        
+        // Sadece 'accepted' (kabul edilmiş) veya 'blocked' (engellenmiş) ilişkileri siliyoruz
+        // 'pending' durumundakileri handleUpdateStatus yönetmeli.
+        const deleteQuery = env.BAYKUS_DB.prepare(
+            `DELETE FROM friends 
+             WHERE user_id = ? AND friend_id = ? AND status IN ('accepted', 'blocked')`
+        );
+        
+        const result = await deleteQuery.bind(user1, user2).run();
+        const changes = (result as any).changes || 0;
+
+        if (changes === 0) {
+            return new Response(JSON.stringify({ error: "Aktif bir arkadaşlık ilişkisi bulunamadı." }), { status: 404 });
+        }
+
+        return new Response(JSON.stringify({ message: "Arkadaşlıktan çıkarıldı." }), { status: 200 });
+
+    } catch (error) {
+        console.error("Çıkarma hatası:", error);
         return new Response(JSON.stringify({ error: "Sunucu hatası." }), { status: 500 });
     }
 }

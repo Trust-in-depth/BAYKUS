@@ -12,6 +12,8 @@ import { handleAddFriend } from "./endpoints/friends";
 import { handleGetTurnCredentials, handleJoinVoiceChannel, handleLeaveVoiceChannel } from "./endpoints/voice";
 import { handleOpenDM } from "./endpoints/dms";
 import { handleUpdateFriendStatus } from "./endpoints/friends"; 
+import { handleUnfriend } from "./endpoints/friends";
+
 // --- 2. TASK Importları ---
 // Hata almamak için tüm Task fonksiyonlarının ayrı dosyalardan geldiği varsayılır.
 import { TaskCreate } from "./endpoints/taskCreate";
@@ -92,6 +94,13 @@ app.post("/api/friends/update", async (c: AppContext) => {
 app.post("/api/friends/add", async (c: AppContext) => {
     const payload = c.get('userPayload');
     return handleAddFriend(c.req.raw, c.env, payload);
+});
+
+
+// Arkadaşlıktan Çıkarma Rotası (Unfriend)
+app.post("/api/friends/unfriend", async (c: AppContext) => {
+    const payload = c.get('userPayload');
+    return handleUnfriend(c.req.raw, c.env, payload);
 });
 
 // DM Kanalı Açma (D1 ve PrivateChat DO)
