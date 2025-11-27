@@ -72,6 +72,33 @@ export async function handleJoinServer(request: Request, env: Env, payload: Auth
         await env.BAYKUS_DB.prepare(
             "INSERT INTO server_members (id, server_id, user_id, role, joined_at) VALUES (?, ?, ?, ?, ?)"
         ).bind(crypto.randomUUID(), serverId, userId, 'member', new Date().toISOString()).run();
+       
+        // 2A. Bildirim DO'ya katılım bilgisini gönder
+        // YENİ MANTIK: Diğer üyelere Bob'un katıldığını bildirme (Presence)
+        // 1. Sunucudaki diğer aktif kullanıcıların ID'lerini D1'den çekmeliyiz
+        const memberIdsResult = await env.BAYKUS_DB.prepare(
+            "SELECT user_id FROM server_members WHERE server_id = ? AND user_id != ?"
+        ).bind(serverId, userId).all(); // Yeni katılan kişi (userId) hariç herkesi çek
+
+        const memberIds = memberIdsResult.results.map((r: any) => r.user_id);
+
+        // 2. Her üyeye bildirim göndermek için döngü
+        for (const memberId of memberIds) {
+            // Her üyenin kendi Notification DO'sunu adresle
+            const notificationId = env.NOTIFICATION.idFromName(memberId);
+            const stub = env.NOTIFICATION.get(notificationId);
+
+            // Notification DO'suna POST isteği gönder (broadcast etmesi için)
+            await stub.fetch("http://do/notify/presence", { // <-- Notification DO'sundaki rotanız
+                method: 'POST',
+                body: JSON.stringify({
+                    type: 'USER_JOINED_SERVER',
+                    userId: userId, // Katılan kişi
+                    serverId: serverId,
+                    username: payload.username // Katılanın kullanıcı adı
+                })
+            }).catch(e => console.error(`Bildirim gönderilemedi: ${memberId}`));
+        }
 
         // 3. Başarılı yanıt
         return new Response(JSON.stringify({ message: "Sunucuya başarıyla katıldınız.", serverId }), { status: 200 });
