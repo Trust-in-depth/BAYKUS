@@ -49,6 +49,25 @@ app.post("/api/auth/login", async (c) => {
     return handleLogin(c.req.raw, c.env);
 });
 
+app.post("/notify/track", async (c) => {
+    // "global" adını kullanarak tek bir Notification DO örneğini adresliyoruz
+    const id = c.env.NOTIFICATION.idFromName("global"); 
+    const stub = c.env.NOTIFICATION.get(id);
+    
+    // DO'nun kendi içindeki /track rotasına isteği yönlendir
+    // c.req.raw kullanarak orijinal isteği olduğu gibi iletmek en temizidir.
+    return stub.fetch(c.req.raw); 
+});
+
+app.get("/notify/count", async (c) => {
+    // Aynı 'global' DO örneğinden sayacı çek
+    const id = c.env.NOTIFICATION.idFromName("global");
+    const stub = c.env.NOTIFICATION.get(id);
+    
+    // c.req.raw kullanarak orijinal isteği olduğu gibi ilet
+    return stub.fetch(c.req.raw); 
+});
+
 // Kök dizini (/) için kendi rotamızı tanımla
 app.get('/', (c) => c.text('Baykuş Workers Aktif ve Frontend Entegrasyonuna Hazır!'));
 app.get('/test', (c) => c.text('Hono!'));
