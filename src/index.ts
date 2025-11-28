@@ -15,6 +15,7 @@ import { handleUnfriend } from "./endpoints/friends";
 import {handleJoinServer} from "./endpoints/rooms";
 import { handleLeaveServer } from "./endpoints/rooms";
 import { jwtAuthMiddleware, AppContext } from "./auth/jwt_hono_middleware"; 
+import { handleFileUpload } from "./endpoints/files";
 // --- 2. TASK Importları ---
 // Hata almamak için tüm Task fonksiyonlarının ayrı dosyalardan geldiği varsayılır.
 import { TaskCreate } from "./endpoints/taskCreate";
@@ -230,9 +231,14 @@ app.post("/api/chat/send", async (c: AppContext) => {
             timestamp: Date.now()
         })
     });
-    
     // Yanıt dön
     return c.text("Message sent");
+});
+
+// Dosya Yükleme Rotası (R2'ye yükler)
+app.post("/api/files/upload", async (c: AppContext) => {
+    const payload = c.get('userPayload');
+    return handleFileUpload(c.req.raw, c.env, payload);
 });
 
 // ... (Diğer tüm mevcut DO rotaları benzer şekilde AppContext ile güncellenmeli ve /api/* altına taşınmalıdır.) ...
