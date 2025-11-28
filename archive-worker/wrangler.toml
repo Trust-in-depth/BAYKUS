@@ -1,0 +1,9 @@
+name = "archive-worker" # Bu, Workers uygulamasının benzersiz adıdır.
+main = "index.ts"      # Bu Worker'ın ana giriş noktasıdır (kodunu yazdığımız dosya).
+compatibility_date = "2024-01-01" # Güncel bir tarih kullanın.
+
+# R2 Binding'leri
+# Bu Worker'ın dosya yüklemesi için kullanacağı R2 Bucket'ı tanımlar.
+[[r2_buckets]]
+binding = "MEDIA_FILES"        # Kod içinde env.MEDIA_FILES olarak erişilir (src/types.ts'deki adla aynı olmalı).
+bucket_name = "baykus-media"   # Gerçek R2 Bucket'ınızın adıdır.

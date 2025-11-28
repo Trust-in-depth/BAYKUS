@@ -23,6 +23,8 @@ export interface Env {
   USER_METADATA: DurableObjectNamespace;
   USER_STATUS: DurableObjectNamespace;
   RATE_LIMIT: DurableObjectNamespace;
+//(Service Binding)
+  ARCHIVE_WORKER: Fetcher;
 }
 
 

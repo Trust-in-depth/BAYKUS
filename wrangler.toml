@@ -71,3 +71,7 @@ database_id = "a90bb2ee-fdb9-45d4-9d14-1077dfed5309"
 [vars]
 # JWT oluşturma ve doğrulama için kullanılacak gizli anahtar
 JWT_SECRET = "A.%1s_3,:L0_A45.;-R_J0;A-!_Ge.2:o!"
+
+[[services]]
+binding = "ARCHIVE_WORKER" # Kod içinde bu isimle erişilecek
+service = "archive-worker" # Yeni Worker'ınızın adı
