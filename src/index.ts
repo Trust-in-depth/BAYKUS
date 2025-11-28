@@ -169,18 +169,31 @@ app.post("/api/servers/leave", async (c: AppContext) => {
 
 // Sohbet Mesajı Gönderme (ChatRoom DO)
 app.post("/api/chat/send", async (c: AppContext) => {
+     // JWT'den gelen kullanıcı kimliğini al
+    const payload = c.get('userPayload'); 
+    // Mesaj gövdesini ve oda ID'sini al
     const body = await c.req.json();
-    const payload = c.get('userPayload'); // JWT'den gelen kullanıcı ID'si
-    
+    // Güvenlik kontrolü
+    if (!body.roomId || !body.content) {
+         return c.json({ error: "Oda ve içerik gerekli." }, 400);
+    }
+    // 1. ChatRoom Durable Object'i adresle
     const id = c.env.CHAT_ROOM.idFromName(body.roomId);
     const stub = c.env.CHAT_ROOM.get(id);
 
-    // Güvenli User ID'yi DO'ya gönder
+    // 2. Mesajı DO'ya ilet (DO'nun /send-message rotasını tetikler)
     await stub.fetch("http://do/send-message", { 
         method: "POST", 
+        // DO'ya mesajı gönderenin kimliğini iletiyoruz
         headers: { 'X-User-ID': payload.userId }, 
-        body: JSON.stringify(body) 
+        body: JSON.stringify({ 
+            content: body.content,
+            username: payload.username, // Görünen ad
+            timestamp: Date.now()
+        })
     });
+    
+    // Yanıt dön
     return c.text("Message sent");
 });
 
