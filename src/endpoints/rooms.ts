@@ -143,14 +143,25 @@ export async function handleLeaveServer(request: Request, env: Env, payload: Aut
         }
 
 // --- 1. D1'de üyeliği Soft Delete yapma ---
-        // Kaydı silmek yerine left_at sütununu güncelle
-// 1. Üyeliği bul ve güncelle. left_at IS NULL olan kaydı arıyoruz.
+// 1. ADIM: AKTİF KAYIT KONTROLÜ (SELECT)
+const activeMembership = await env.BAYKUS_DB.prepare(
+    // Aktif kaydı (left_at IS NULL) bul ve ID'sini çek
+    "SELECT id FROM server_members WHERE server_id = ? AND user_id = ? AND left_at IS NULL" 
+).bind(serverId, userId).first('id');
+
+if (!activeMembership) {
+    // Eğer aktif kayıt yoksa, UPDATE yapmaya gerek kalmaz.
+    return new Response(JSON.stringify({ error: "Bu sunucuda aktif üyelik bulunamadı." }), { status: 404 });
+}
+
+// 2. ADIM: KAYDI ID İLE GÜNCELLE (UPDATE)
+// Sadece bulunan ID'yi güncelleyerek hata riskini azaltırız.
 const updateQuery = env.BAYKUS_DB.prepare(
-            "UPDATE server_members SET left_at = strftime('%s','now') WHERE server_id = ? AND user_id = ? AND left_at IS NULL"
-        );
-        
-        // Sorguyu çalıştır ve etkilenen satır sayısını al (changes)
-        const result = await updateQuery.bind(serverId, userId).run();
+    // Sorguyu sadece ID'ye odaklıyoruz
+    "UPDATE server_members SET left_at = strftime('%s','now') WHERE id = ?"
+);
+const result = await updateQuery.bind(activeMembership).run(); 
+// ^^^ Bu sorgunun changes değeri artık büyük ihtimalle 1 dönecektir.
         const changes = (result as any).changes || 0;
 
         // 2. Kontrol: Eğer hiçbir satır etkilenmediyse (changes === 0)
