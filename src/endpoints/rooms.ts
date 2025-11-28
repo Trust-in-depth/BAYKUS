@@ -145,17 +145,19 @@ export async function handleLeaveServer(request: Request, env: Env, payload: Aut
 // --- 1. D1'de üyeliği Soft Delete yapma ---
         // Kaydı silmek yerine left_at sütununu güncelle
 // 1. Üyeliği bul ve güncelle. left_at IS NULL olan kaydı arıyoruz.
-const updateQuery = env.BAYKUS_DB.prepare(
-            "UPDATE server_members SET left_at = strftime('%s','now') WHERE server_id = ? AND user_id = ? AND left_at IS NULL"
+        const updateQuery = env.BAYKUS_DB.prepare(
+            // Yeni ayrılma zamanı olarak SQL fonksiyonu kullanılıyor
+            "UPDATE server_members SET left_at = strftime('%s','now') WHERE server_id = ? AND user_id = ? AND left_at IS NULL" 
+            // VEYA: Eğer left_at TEXT ise, yine new Date().toISOString() kullanmaya devam edin.
         );
-        
-        // Sorguyu çalıştır ve etkilenen satır sayısını al (changes)
-        const result = await updateQuery.bind(serverId, userId).run();
-        const changes = (result as any).changes || 0;
 
-        // 2. Kontrol: Eğer hiçbir satır etkilenmediyse (changes === 0)
-        if (changes === 0) {
-            // Bu, kaydın left_at IS NULL OLMADIĞI (yani zaten ayrıldığı) anlamına gelir.
+// KRİTİK KONTROL: Aktif üye kaydının varlığını doğrulama
+        const activeMembership = await env.BAYKUS_DB.prepare(
+            "SELECT id FROM server_members WHERE server_id = ? AND user_id = ? AND left_at IS NULL"
+        ).bind(serverId, userId).first('id');
+
+        if (!activeMembership) {
+            // Eğer aktif kayıt (left_at IS NULL) bulunamazsa, kullanıcı zaten ayrılmıştır.
             return new Response(JSON.stringify({ error: "Bu sunucuda aktif üyelik bulunamadı." }), { status: 404 });
         }
         
