@@ -78,7 +78,7 @@ if (previousMember) {
     // Kayıt VARDI (pasif). UPDATE ile aktif hale getir (Soft Un-Delete).
     await env.BAYKUS_DB.prepare(
         "UPDATE server_members SET left_at = NULL, joined_at = ? WHERE id = ?"
-    ).bind(previousMember).run();
+    ).bind(new Date().toISOString(), previousMember).run();
     
     // NDO Bildirimi gönderilir (JOIN)
     // ... (NDO yayınlama kodu buraya gelecek) ...
