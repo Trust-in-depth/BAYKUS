@@ -5,7 +5,6 @@ import { Hono } from "hono";
 
 // --- 1. JWT, AUTH ve D1 API Importları ---
 // Bu import'lar, Endpoint dosyalarınızdaki ve Middleware'deki fonksiyonları çeker.
-import { jwtAuthMiddleware, AppContext } from "./auth/jwt_hono_middleware"; 
 import { handleRegister, handleLogin } from "./endpoints/auth";
 import { handleCreateServer } from "./endpoints/rooms";
 import { handleAddFriend } from "./endpoints/friends";
@@ -15,6 +14,7 @@ import { handleUpdateFriendStatus } from "./endpoints/friends";
 import { handleUnfriend } from "./endpoints/friends";
 import {handleJoinServer} from "./endpoints/rooms";
 import { handleLeaveServer } from "./endpoints/rooms";
+import { jwtAuthMiddleware, AppContext } from "./auth/jwt_hono_middleware"; 
 // --- 2. TASK Importları ---
 // Hata almamak için tüm Task fonksiyonlarının ayrı dosyalardan geldiği varsayılır.
 import { TaskCreate } from "./endpoints/taskCreate";
@@ -35,6 +35,7 @@ import { RateLimitDurableObject } from "./Rate_limit_durable_object";
 // Temel yapılar
 export { Room } from "./room";
 import type { Env } from "./types";
+import { verifyAndDecodeJwt } from "./auth/jwt";
 
 
 // Hono uygulamasını başlat
@@ -164,6 +165,48 @@ app.post("/api/servers/leave", async (c: AppContext) => {
     const payload = c.get('userPayload');
     return handleLeaveServer(c.req.raw, c.env, payload);
 });
+
+// --- YENİ: WEBSOCKET SİNYALLEŞME ROTASI (GENEL KANAL BAĞLANTISI) ---
+app.get("/ws/chat/:channelId", async (c: AppContext) => {
+    
+// 1. Yetkilendirme (JWT) Kontrolü
+    const authHeader = c.req.header('Authorization'); // Header'ı direkt Context'ten çekin
+
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        // Eğer JWT eksikse, 401 Unauthorized yanıtını döndürerek bağlantıyı reddet
+        return c.json({ error: "Yetkilendirme başlığı eksik." }, 401);
+    }
+
+    const token = authHeader.substring(7);
+    
+    // JWT'yi çözmek için verifyAndDecodeJwt fonksiyonunu çağırın
+    // NOT: Bu fonksiyonun jwt.ts dosyasından import edilmesi gerekir.
+    const payload = await verifyAndDecodeJwt(token, c.env); 
+
+    if (!payload) {
+        // Eğer JWT geçerli değilse veya süresi dolmuşsa, reddet
+        return c.json({ error: "Geçersiz veya süresi dolmuş token." }, 401);
+    }
+    // 2. Durable Object'i Adresleme
+    const channelId = c.req.param("channelId");
+    const id = c.env.CHAT_ROOM.idFromName(channelId);
+    const stub = c.env.CHAT_ROOM.get(id);
+    // 3. Bağlantıyı DO'ya Transfer Etme
+    // DO'nun kendi içindeki /connect rotasına yönlendiriyoruz
+    const doUrl = new URL(c.req.url); 
+    doUrl.pathname = "/connect"; // DO'nun beklediği kısa rota
+
+    // Worker, gelen Request nesnesini DO'ya iletmelidir.
+
+    // Yeni Request nesnesi oluştur (Güvenli ID'yi başlığa ekleyerek)
+    const newRequest = new Request(doUrl.toString(), c.req.raw);
+    newRequest.headers.set('X-User-ID', payload.userId);
+    newRequest.headers.set('X-Username', payload.username);
+    // İsteği DO'ya yönlendir
+    return stub.fetch(newRequest);
+});
+
+
 // 6B. GÜVENLİ DO YÖNLENDİRMELERİ (MEVCUT KODUN GÜVENLİ HALE GETİRİLMİŞİ)
 // Mevcut DO rotaları artık JWT koruması altındadır ve /api/* altında çalışır.
 
