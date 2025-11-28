@@ -168,23 +168,18 @@ app.post("/api/servers/leave", async (c: AppContext) => {
 
 // --- YENİ: WEBSOCKET SİNYALLEŞME ROTASI (GENEL KANAL BAĞLANTISI) ---
 app.get("/ws/chat/:channelId", async (c: AppContext) => {
+ // 1. Yetkilendirme (JWT) Kontrolü
+    const url = new URL(c.req.url);
     
-// 1. Yetkilendirme (JWT) Kontrolü
-    const authHeader = c.req.header('Authorization'); // Header'ı direkt Context'ten çekin
-
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        // Eğer JWT eksikse, 401 Unauthorized yanıtını döndürerek bağlantıyı reddet
-        return c.json({ error: "Yetkilendirme başlığı eksik." }, 401);
+    // KRİTİK DÜZELTME: JWT'yi sorgu parametresinden al
+    const token = url.searchParams.get('token'); 
+    if (!token) {
+        return c.json({ error: "Yetkilendirme token'ı eksik." }, 401);
     }
-
-    const token = authHeader.substring(7);
-    
     // JWT'yi çözmek için verifyAndDecodeJwt fonksiyonunu çağırın
-    // NOT: Bu fonksiyonun jwt.ts dosyasından import edilmesi gerekir.
     const payload = await verifyAndDecodeJwt(token, c.env); 
-
     if (!payload) {
-        // Eğer JWT geçerli değilse veya süresi dolmuşsa, reddet
+        // Eğer JWT geçerli değilse, WebSocket bağlantısını reddet
         return c.json({ error: "Geçersiz veya süresi dolmuş token." }, 401);
     }
     // 2. Durable Object'i Adresleme
