@@ -214,8 +214,19 @@ app.post("/api/chat/send", async (c: AppContext) => {
     const body = await c.req.json();
     // Güvenlik kontrolü
     if (!body.roomId || !body.content) {
-         return c.json({ error: "Oda ve içerik gerekli." }, 400);
+         return c.json({ error: "Oda ve içerik gerekli." }, 400);}
+
+         // 1. Mesajın temel yapısını oluştur
+    const messageData: any = { // Geçici olarak 'any' kullanıyoruz
+        content: body.content,
+        username: payload.username, 
+        timestamp: Date.now(),
+    };
+    
+    if (body.attachmentUrl) {
+        messageData.attachmentUrl = body.attachmentUrl;
     }
+    
     // 1. ChatRoom Durable Object'i adresle
     const id = c.env.CHAT_ROOM.idFromName(body.roomId);
     const stub = c.env.CHAT_ROOM.get(id);
@@ -225,11 +236,7 @@ app.post("/api/chat/send", async (c: AppContext) => {
         method: "POST", 
         // DO'ya mesajı gönderenin kimliğini iletiyoruz
         headers: { 'X-User-ID': payload.userId }, 
-        body: JSON.stringify({ 
-            content: body.content,
-            username: payload.username, // Görünen ad
-            timestamp: Date.now()
-        })
+        body: JSON.stringify(messageData)
     });
     // Yanıt dön
     return c.text("Message sent");
