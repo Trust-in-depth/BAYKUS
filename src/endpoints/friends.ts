@@ -60,8 +60,8 @@ export async function handleAddFriend(request: Request, env: Env, payload: AuthP
 
         // Arkadaşlık İsteğini Kaydetme
         await env.BAYKUS_DB.prepare(
-            "INSERT INTO friends (id, user_id, friend_id, status, created_at) VALUES (?, ?, ?, ?, ?)"
-        ).bind(crypto.randomUUID(), user1, user2, 'pending', new Date().toISOString()).run();
+            "INSERT INTO friends (id, user_id, friend_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)"
+        ).bind(crypto.randomUUID(), user1, user2, 'pending', new Date().toISOString(), new Date().toISOString()).run();
 
         return new Response(JSON.stringify({ message: "Arkadaşlık isteği gönderildi.", receiverId: receiverId }), { status: 201 });
 
