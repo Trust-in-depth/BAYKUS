@@ -12,5 +12,5 @@ database_id = "a90bb2ee-fdb9-45d4-9d14-1077dfed5309" # D1 ID'niz
 # Bu, kodu düzenli aralıklarla çalıştırır.
 [triggers]
 # Yeni ayar: Her 5 dakikada bir çalıştır.
-crons = ["*/5 * * * *"] 
+crons = ["*/1 * * * *"] 
 # Önceki ayar: ["0 0 * * *"] Her gece yarısıydı.
