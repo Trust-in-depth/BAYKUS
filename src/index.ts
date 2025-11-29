@@ -230,6 +230,21 @@ app.post("/api/chat/send", async (c: AppContext) => {
 
 // src/index.ts içinde, JWT korumalı rotalara ekleyin (Örneğin /api/chat/send rotasının yanına)
 
+    // 1. ChatRoom Durable Object'i adresle
+    const id = c.env.CHAT_ROOM.idFromName(body.roomId);
+    const stub = c.env.CHAT_ROOM.get(id);
+
+    // 2. Mesajı DO'ya ilet (DO'nun /send-message rotasını tetikler)
+    await stub.fetch("http://do/send-message", { 
+        method: "POST", 
+        // DO'ya mesajı gönderenin kimliğini iletiyoruz
+        headers: { 'X-User-ID': payload.userId }, 
+        body: JSON.stringify(messageData)
+    });
+    // Yanıt dön
+    return c.text("Message sent");
+});
+
 // YENİ DM GÖNDERME ROTASI
 app.post("/api/dm/send", async (c: AppContext) => {
     const payload = c.get('userPayload'); // JWT'den yetkili kullanıcıyı al
@@ -259,27 +274,12 @@ app.post("/api/dm/send", async (c: AppContext) => {
     return c.text("DM sent");
 });
 
-
-    // 1. ChatRoom Durable Object'i adresle
-    const id = c.env.CHAT_ROOM.idFromName(body.roomId);
-    const stub = c.env.CHAT_ROOM.get(id);
-
-    // 2. Mesajı DO'ya ilet (DO'nun /send-message rotasını tetikler)
-    await stub.fetch("http://do/send-message", { 
-        method: "POST", 
-        // DO'ya mesajı gönderenin kimliğini iletiyoruz
-        headers: { 'X-User-ID': payload.userId }, 
-        body: JSON.stringify(messageData)
-    });
-    // Yanıt dön
-    return c.text("Message sent");
-});
-
 // Dosya Yükleme Rotası (R2'ye yükler)
 app.post("/api/files/upload", async (c: AppContext) => {
     const payload = c.get('userPayload');
     return handleFileUpload(c.req.raw, c.env, payload);
 });
+
 
 // ... (Diğer tüm mevcut DO rotaları benzer şekilde AppContext ile güncellenmeli ve /api/* altına taşınmalıdır.) ...
 
