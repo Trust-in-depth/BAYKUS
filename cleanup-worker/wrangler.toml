@@ -11,4 +11,6 @@ database_id = "a90bb2ee-fdb9-45d4-9d14-1077dfed5309" # D1 ID'niz
 # CRON Trigger (Zamanlanmış Tetikleyici)
 # Bu, kodu düzenli aralıklarla çalıştırır.
 [triggers]
-crons = ["0 0 * * *"] # Her gece yarısı (UTC 00:00) çalışır
+# Yeni ayar: Her 5 dakikada bir çalıştır.
+crons = ["*/5 * * * *"] 
+# Önceki ayar: ["0 0 * * *"] Her gece yarısıydı.
