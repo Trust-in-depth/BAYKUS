@@ -226,7 +226,40 @@ app.post("/api/chat/send", async (c: AppContext) => {
     if (body.attachmentUrl) {
         messageData.attachmentUrl = body.attachmentUrl;
     }
+
+
+// src/index.ts içinde, JWT korumalı rotalara ekleyin (Örneğin /api/chat/send rotasının yanına)
+
+// YENİ DM GÖNDERME ROTASI
+app.post("/api/dm/send", async (c: AppContext) => {
+    const payload = c.get('userPayload'); // JWT'den yetkili kullanıcıyı al
+    const body = await c.req.json();
     
+    // Güvenlik kontrolü
+    if (!body.roomId || !body.content) {
+         return c.json({ error: "Oda ve içerik gerekli." }, 400);
+    }
+    
+    // 1. PrivateChat Durable Object'i adresle
+    // Not: DM'ler için roomId (dmChannelId) kullanılır
+    const id = c.env.PRIVATE_CHAT.idFromName(body.roomId); 
+    const stub = c.env.PRIVATE_CHAT.get(id);
+
+    // 2. Mesajı DO'ya ilet (DO'nun /send-dm rotasını tetikler)
+    await stub.fetch("http://do/send-dm", { 
+        method: "POST", 
+        headers: { 'X-User-ID': payload.userId }, 
+        body: JSON.stringify({ 
+            content: body.content,
+            username: payload.username, 
+            timestamp: Date.now()
+        })
+    });
+    
+    return c.text("DM sent");
+});
+
+
     // 1. ChatRoom Durable Object'i adresle
     const id = c.env.CHAT_ROOM.idFromName(body.roomId);
     const stub = c.env.CHAT_ROOM.get(id);
