@@ -5,7 +5,7 @@ interface Env {
 }
 
 // 90 gün (saniye cinsinden)
-const NINETY_DAYS_IN_SECONDS = 90 * 24 * 60 * 60; 
+const NINETY_DAYS_IN_SECONDS = 30; 
 
 export default {
     // CRON tarafından tetiklenen ana fonksiyon
