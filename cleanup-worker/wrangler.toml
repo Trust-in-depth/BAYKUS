@@ -1,0 +1,14 @@
+name = "cleanup-worker"
+main = "index.ts" # Bu Worker'ın ana kodu.
+compatibility_date = "2024-01-01" 
+
+# D1 Binding'i: Temizlik yapabilmek için veritabanına erişim şarttır.
+[[d1_databases]]
+binding = "BAYKUS_DB"
+database_name = "baykus_db_prod" # Canlı D1 adınız
+database_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" # D1 ID'niz
+
+# CRON Trigger (Zamanlanmış Tetikleyici)
+# Bu, kodu düzenli aralıklarla çalıştırır.
+[triggers]
+crons = ["0 0 * * *"] # Her gece yarısı (UTC 00:00) çalışır

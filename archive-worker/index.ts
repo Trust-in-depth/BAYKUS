@@ -1,12 +1,15 @@
-//archive-worker/index.ts
 
 // Not: Bu Worker'ın Env'de sadece R2 binding'ini (MEDIA_FILES) ve gerekirse diğer R2/D1 bindinglerini içerdiğini varsayıyoruz.
-
 // Bu Worker'ın sadece R2'ye eriştiği ve başka bir Workers servisi olduğu için 
 // bu Worker'a özel Env tipi burada da tanımlanmalıdır.
 interface ArchiveEnv {
     MEDIA_FILES: R2Bucket; // R2 depolama binding'i
     // ... (Eğer messages için ayrı R2 bucket'ı varsa, o da burada olmalı)
+}
+// ChatRoomDO'dan gelen beklenen JSON gövdesinin yapısı
+interface ArchiveRequestBody {
+    roomId: string;
+    messages: any[]; // Mesajların bir dizi olduğunu varsayıyoruz
 }
 
 export default {
@@ -16,7 +19,7 @@ export default {
         if (request.url.endsWith("/archive/messages") && request.method === "POST") {
             try {
                 // 1. Gelen Veriyi Çözme (DO'dan gelen JSON)
-                const { roomId, messages } = await request.json();
+                const { roomId, messages } = await request.json() as ArchiveRequestBody;
                 
                 if (!messages || messages.length === 0) {
                     return new Response("No messages to archive.", { status: 200 });

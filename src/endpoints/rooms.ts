@@ -49,85 +49,67 @@ export async function handleCreateServer(request: Request, env: Env, payload: Au
 
 
 
-// Kullanıcının bir sunucuya katılımını yönetir
 export async function handleJoinServer(request: Request, env: Env, payload: AuthPayload): Promise<Response> {
     try {
         const { serverId } = await request.json() as { serverId: string };
         const userId = payload.userId;
-
+        const username = payload.username || 'Bilinmeyen Kullanıcı'; 
+        
         if (!serverId) {
             return new Response(JSON.stringify({ error: "Sunucu ID'si gerekli." }), { status: 400 });
         }
 
-        // 1. Zaten üye mi kontrol et
-        const existingMember = await env.BAYKUS_DB.prepare(
-            "SELECT id FROM server_members WHERE server_id = ? AND user_id = ? AND left_at IS NULL"
+        // 1. PASİF kaydı kontrol et ve AKTİF HALE GETİR (Soft Un-Delete)
+        const previousMember = await env.BAYKUS_DB.prepare(
+            "SELECT id FROM server_members WHERE server_id = ? AND user_id = ?"
         ).bind(serverId, userId).first('id');
 
-        if (existingMember) {
-            return new Response(JSON.stringify({ message: "Zaten bu sunucunun üyesisiniz." }), { status: 200 });
+
+        if (previousMember) {
+            // Kayıt VARDI (pasif). UPDATE ile AKTİF hale getir (left_at = NULL).
+            await env.BAYKUS_DB.prepare(
+                "UPDATE server_members SET left_at = NULL, joined_at = strftime('%s','now') WHERE id = ?"
+            ).bind(previousMember).run(); 
+            
+        } else {
+            // Kayıt HİÇ YOKTU. YENİ KAYIT EKLE (İlk katılım)
+            await env.BAYKUS_DB.prepare(
+                "INSERT INTO server_members (id, server_id, user_id, role, joined_at, left_at) VALUES (?, ?, ?, ?, strftime('%s','now'), NULL)"
+            ).bind(crypto.randomUUID(), serverId, userId, 'member').run(); 
         }
 
-     // 2. ADIM: Daha önce ayrılmış bir kayıt var mı kontrol et (Pasif Kayıt)
-const previousMember = await env.BAYKUS_DB.prepare(
-    "SELECT id FROM server_members WHERE server_id = ? AND user_id = ?"
-).bind(serverId, userId).first('id');
+        
+        // 2. NDO BİLDİRİMİ GÖNDER (JOIN)
+        const messagePayload = {
+            type: "PRESENCE_UPDATE",
+            data: {
+                action: "JOIN",
+                userId: userId,
+                username: username,
+                serverId: serverId,
+                timestamp: Date.now()
+            }
+        };
 
-
-if (previousMember) {
-    // Kayıt VARDI (pasif). UPDATE ile aktif hale getir (Soft Un-Delete).
-    await env.BAYKUS_DB.prepare(
-        "UPDATE server_members SET left_at = NULL, joined_at = ? WHERE id = ?"
-    ).bind(new Date().toISOString(), previousMember).run();
-    
-    // NDO Bildirimi gönderilir (JOIN)
-    // ... (NDO yayınlama kodu buraya gelecek) ...
-    
-    return new Response(JSON.stringify({ message: "Sunucuya başarıyla katıldınız (yeniden aktif edildi)." }), { status: 200 });
-
-} else {
-    // Kayıt HİÇ YOKTU. YENİ KAYIT EKLE (İlk katılım)
-    await env.BAYKUS_DB.prepare(
-        "INSERT INTO server_members (id, server_id, user_id, role, joined_at, left_at) VALUES (?, ?, ?, ?, ?, NULL)"
-    ).bind(crypto.randomUUID(), serverId, userId, 'member', new Date().toISOString()).run();
-    
-
-        // 2A. Bildirim DO'ya katılım bilgisini gönder
-        // YENİ MANTIK: Diğer üyelere Bob'un katıldığını bildirme (Presence)
-        // 1. Sunucudaki diğer aktif kullanıcıların ID'lerini D1'den çekmeliyiz
-        const memberIdsResult = await env.BAYKUS_DB.prepare(
-            "SELECT user_id FROM server_members WHERE server_id = ? AND user_id != ?"
-        ).bind(serverId, userId).all(); // Yeni katılan kişi (userId) hariç herkesi çek
-
-        const memberIds = memberIdsResult.results.map((r: any) => r.user_id);
-
-        // 2. Her üyeye bildirim göndermek için döngü
-        for (const memberId of memberIds) {
-            // Her üyenin kendi Notification DO'sunu adresle
-            const notificationId = env.NOTIFICATION.idFromName(memberId);
-            const stub = env.NOTIFICATION.get(notificationId);
-
-            // Notification DO'suna POST isteği gönder (broadcast etmesi için)
-            await stub.fetch("http://do/notify/presence", { // <-- Notification DO'sundaki rotanız
-                method: 'POST',
-                body: JSON.stringify({
-                    type: 'USER_JOINED_SERVER',
-                    userId: userId, // Katılan kişi
-                    serverId: serverId,
-                    username: payload.username // Katılanın kullanıcı adı
-                })
-            }).catch(e => console.error(`Bildirim gönderilemedi: ${memberId}`));
-        }
-
-        // 3. Başarılı yanıt
+        const notificationId = env.NOTIFICATION.idFromName("global"); 
+        const notificationStub = env.NOTIFICATION.get(notificationId);
+        const doUrl = new URL("http://do/presence"); 
+        
+        await notificationStub.fetch(doUrl.toString(), {
+            method: "POST",
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(messagePayload),
+        }).catch(e => console.error(`Katılım bildirimi yayınlanırken hata oluştu:`, e));
+        
+        
+        // 3. BAŞARILI YANIT
         return new Response(JSON.stringify({ message: "Sunucuya başarıyla katıldınız.", serverId }), { status: 200 });
-    }
+
     } catch (error) {
         console.error("Sunucuya katılma hatası:", error);
         return new Response(JSON.stringify({ error: "Sunucu hatası." }), { status: 500 });
     }
 }
-
 
 // src/endpoints/rooms.ts (handleLeaveServer fonksiyonunun Düzeltilmiş Hali)
 
