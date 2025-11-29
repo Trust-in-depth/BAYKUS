@@ -74,8 +74,8 @@ export async function handleJoinServer(request: Request, env: Env, payload: Auth
         } else {
             // Kayıt HİÇ YOKTU. YENİ KAYIT EKLE (İlk katılım)
             await env.BAYKUS_DB.prepare(
-                "INSERT INTO server_members (id, server_id, user_id, role, joined_at, left_at) VALUES (?, ?, ?, ?, strftime('%s','now'), NULL)"
-            ).bind(crypto.randomUUID(), serverId, userId, 'member').run(); 
+                "INSERT INTO server_members (id, server_id, user_id, role, joined_at, left_at) VALUES (?, ?, ?, ?, ?, NULL)"
+            ).bind(crypto.randomUUID(), serverId, userId, 'member', new Date().toISOString()).run(); 
         }
 
         
@@ -111,71 +111,48 @@ export async function handleJoinServer(request: Request, env: Env, payload: Auth
     }
 }
 
-// src/endpoints/rooms.ts (handleLeaveServer fonksiyonunun Düzeltilmiş Hali)
+// src/endpoints/rooms.ts (handleLeaveServer fonksiyonu - UX ODAKLI DÜZELTME)
 
 export async function handleLeaveServer(request: Request, env: Env, payload: AuthPayload): Promise<Response> {
     try {
-        // Sunucu ID'si alınır
         const { serverId } = await request.json() as { serverId: string };
         const userId = payload.userId;
-        const username = payload.username || 'Bilinmeyen Kullanıcı'; // Payload'da username olduğunu varsayıyoruz
-
+        const username = payload.username || 'Bilinmeyen Kullanıcı';
+        
         if (!serverId) {
             return new Response(JSON.stringify({ error: "Sunucu ID'si gerekli." }), { status: 400 });
         }
 
-// --- 1. D1'de üyeliği Soft Delete yapma ---
-// 1. ADIM: AKTİF KAYIT KONTROLÜ (SELECT)
-const activeMembership = await env.BAYKUS_DB.prepare(
-    // Aktif kaydı (left_at IS NULL) bul ve ID'sini çek
-    "SELECT id FROM server_members WHERE server_id = ? AND user_id = ? AND left_at IS NULL" 
-).bind(serverId, userId).first('id');
-
-if (!activeMembership) {
-    // Eğer aktif kayıt yoksa, UPDATE yapmaya gerek kalmaz.
-    return new Response(JSON.stringify({ error: "Bu sunucuda aktif üyelik bulunamadı." }), { status: 404 });
-}
-
-// 2. ADIM: KAYDI ID İLE GÜNCELLE (UPDATE)
-// Sadece bulunan ID'yi güncelleyerek hata riskini azaltırız.
-const updateQuery = env.BAYKUS_DB.prepare(
-    // Sorguyu sadece ID'ye odaklıyoruz
-    "UPDATE server_members SET left_at = strftime('%s','now') WHERE id = ?"
-);
-const result = await updateQuery.bind(activeMembership).run(); 
-// ^^^ Bu sorgunun changes değeri artık büyük ihtimalle 1 dönecektir.
-        const changes = (result as any).changes || 0;
-
-        // 2. Kontrol: Eğer hiçbir satır etkilenmediyse (changes === 0)
-        if (changes === 0) {
-            // Bu, kaydın left_at IS NULL OLMADIĞI (yani zaten ayrıldığı) anlamına gelir.
-            return new Response(JSON.stringify({ error: "Bu sunucuda aktif üyelik bulunamadı." }), { status: 404 });
-        }
+        // --- 1. D1'de üyeliği Soft Delete yapma ---
+        // Bu sorgu, kaydı bulursa left_at'i günceller. Bulamazsa 0 değişiklik yapar (başarısız sayılmaz).
+        const updateQuery = env.BAYKUS_DB.prepare(
+            "UPDATE server_members SET left_at = strftime('%s','now') WHERE server_id = ? AND user_id = ? AND left_at IS NULL"
+        );
         
-        // --- 2. Notification Durable Object'e yayınlama (broadcast) isteği gönderme ---
+        // Sorguyu çalıştırıyoruz; changes değerini KONTROL ETMİYORUZ.
+        await updateQuery.bind(serverId, userId).run(); 
         
-       const memberIdsResult = await env.BAYKUS_DB.prepare(
-    "SELECT user_id FROM server_members WHERE server_id = ?"
-).bind(serverId).all();
+        // --- 2. NDO BİLDİRİMİ GÖNDER (LEAVE) ---
+        // Kayıt güncellense de güncellenmese de NDO yayını yapılır (UX için).
+        const messagePayload = {
+            type: "PRESENCE_UPDATE",
+            data: { action: "LEAVE", userId: userId, username: username, serverId: serverId, timestamp: Date.now() }
+        };
 
-const memberIds = memberIdsResult.results.map((r: any) => r.user_id);
-
-// 2. Her üyeye bildirim göndermek için döngü
-const messagePayload = { /* ... LEAVE verileri ... */ }; // Tanımlanmış olmalı
-
-for (const memberId of memberIds) {
-    const notificationId = env.NOTIFICATION.idFromName(memberId);
-    const stub = env.NOTIFICATION.get(notificationId);
-
-    // CRITICAL: Bu fetch işlemi, loglarda görünür olmalıdır.
-    await stub.fetch("http://do/presence", { // VEYA 'http://do/notify/presence' (NDO içindeki rotanıza göre)
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(messagePayload)
-    });
-}
-
-        // --- 3. Başarılı yanıtı döndürme ---
+        const notificationId = env.NOTIFICATION.idFromName("global");
+        const notificationStub = env.NOTIFICATION.get(notificationId);
+        const doUrl = new URL("http://do/presence");
+        
+        // Asenkron yayınlama
+        await notificationStub.fetch(doUrl.toString(), {
+            method: "POST",
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(messagePayload),
+        }).catch(e => console.error(`Ayrılma bildirimi yayınlanırken hata oluştu:`, e));
+        
+        
+        // 3. BAŞARILI YANIT (Her durumda 200 OK)
+        // Kullanıcının ayrıldığına dair kesin onay verilir.
         return new Response(JSON.stringify({ message: "Sunucudan başarıyla ayrıldınız.", serverId }), { status: 200 });
 
     } catch (error) {
