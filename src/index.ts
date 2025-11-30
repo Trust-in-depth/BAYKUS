@@ -16,6 +16,7 @@ import {handleJoinServer} from "./endpoints/rooms";
 import { handleLeaveServer } from "./endpoints/rooms";
 import { jwtAuthMiddleware, AppContext } from "./auth/jwt_hono_middleware"; 
 import { handleFileUpload } from "./endpoints/files";
+import { handleCreateGroup } from "./endpoints/groups";
 // --- 2. TASK Importları ---
 // Hata almamak için tüm Task fonksiyonlarının ayrı dosyalardan geldiği varsayılır.
 import { TaskCreate } from "./endpoints/taskCreate";
@@ -243,6 +244,12 @@ app.get("/ws/chat/:channelId", async (c: AppContext) => {
     newRequest.headers.set('X-Username', payload.username);
     // İsteği DO'ya yönlendir
     return stub.fetch(newRequest);
+});
+
+// Yeni Grup Oluşturma Rotası
+app.post("/api/groups/create", async (c: AppContext) => {
+    const payload = c.get('userPayload');
+    return handleCreateGroup(c.req.raw, c.env, payload);
 });
 
 
