@@ -15,7 +15,8 @@ export async function handleCreateServer(request: Request, env: Env, payload: Au
             return new Response(JSON.stringify({ error: "Sunucu adı gerekli." }), { status: 400 });
         }
         
-        const serverId = 'CHANNEL-' crypto.randomUUID();
+        const prefixedGroupId = 'CHANNEL-' + crypto.randomUUID();
+        const serverId = prefixedGroupId ;
         const ownerId = payload.userId;
 
         // 1. D1'e Sunucuyu Kaydetme (servers tablosu)
