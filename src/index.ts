@@ -167,6 +167,49 @@ app.post("/api/servers/leave", async (c: AppContext) => {
     return handleLeaveServer(c.req.raw, c.env, payload);
 });
 
+
+
+
+// 6B. DURABLE OBJECT (DO) YÖNLENDİRMELERİ 
+// Mevcut DO rotaları artık JWT koruması altındadır ve /api/* altında çalışır.
+
+// Sohbet Mesajı Gönderme (ChatRoom DO)
+app.post("/api/chat/send", async (c: AppContext) => {
+     // JWT'den gelen kullanıcı kimliğini al
+    const payload = c.get('userPayload'); 
+    // Mesaj gövdesini ve oda ID'sini al
+    const body = await c.req.json();
+    // Güvenlik kontrolü
+    if (!body.roomId || !body.content) {
+         return c.json({ error: "Oda ve içerik gerekli." }, 400);}
+
+         // 1. Mesajın temel yapısını oluştur
+    const messageData: any = { // Geçici olarak 'any' kullanıyoruz
+        content: body.content,
+        username: payload.username, 
+        timestamp: Date.now(),
+    };
+    
+    if (body.attachmentUrl) {
+        messageData.attachmentUrl = body.attachmentUrl;
+    }
+
+    // 1. ChatRoom Durable Object'i adresle
+    const id = c.env.CHAT_ROOM.idFromName(body.roomId);
+    const stub = c.env.CHAT_ROOM.get(id);
+
+    // 2. Mesajı DO'ya ilet (DO'nun /send-message rotasını tetikler)
+    await stub.fetch("http://do/send-message", { 
+        method: "POST", 
+        // DO'ya mesajı gönderenin kimliğini iletiyoruz
+        headers: { 'X-User-ID': payload.userId }, 
+        body: JSON.stringify(messageData)
+    });
+    // Yanıt dön
+    return c.text("Message sent");
+});
+
+
 // --- YENİ: WEBSOCKET SİNYALLEŞME ROTASI (GENEL KANAL BAĞLANTISI) ---
 app.get("/ws/chat/:channelId", async (c: AppContext) => {
  // 1. Yetkilendirme (JWT) Kontrolü
@@ -203,48 +246,6 @@ app.get("/ws/chat/:channelId", async (c: AppContext) => {
 });
 
 
-// 6B. GÜVENLİ DO YÖNLENDİRMELERİ (MEVCUT KODUN GÜVENLİ HALE GETİRİLMİŞİ)
-// Mevcut DO rotaları artık JWT koruması altındadır ve /api/* altında çalışır.
-
-// Sohbet Mesajı Gönderme (ChatRoom DO)
-app.post("/api/chat/send", async (c: AppContext) => {
-     // JWT'den gelen kullanıcı kimliğini al
-    const payload = c.get('userPayload'); 
-    // Mesaj gövdesini ve oda ID'sini al
-    const body = await c.req.json();
-    // Güvenlik kontrolü
-    if (!body.roomId || !body.content) {
-         return c.json({ error: "Oda ve içerik gerekli." }, 400);}
-
-         // 1. Mesajın temel yapısını oluştur
-    const messageData: any = { // Geçici olarak 'any' kullanıyoruz
-        content: body.content,
-        username: payload.username, 
-        timestamp: Date.now(),
-    };
-    
-    if (body.attachmentUrl) {
-        messageData.attachmentUrl = body.attachmentUrl;
-    }
-
-
-// src/index.ts içinde, JWT korumalı rotalara ekleyin (Örneğin /api/chat/send rotasının yanına)
-
-    // 1. ChatRoom Durable Object'i adresle
-    const id = c.env.CHAT_ROOM.idFromName(body.roomId);
-    const stub = c.env.CHAT_ROOM.get(id);
-
-    // 2. Mesajı DO'ya ilet (DO'nun /send-message rotasını tetikler)
-    await stub.fetch("http://do/send-message", { 
-        method: "POST", 
-        // DO'ya mesajı gönderenin kimliğini iletiyoruz
-        headers: { 'X-User-ID': payload.userId }, 
-        body: JSON.stringify(messageData)
-    });
-    // Yanıt dön
-    return c.text("Message sent");
-});
-
 // YENİ DM GÖNDERME ROTASI
 app.post("/api/dm/send", async (c: AppContext) => {
     const payload = c.get('userPayload'); // JWT'den yetkili kullanıcıyı al
@@ -272,6 +273,33 @@ app.post("/api/dm/send", async (c: AppContext) => {
     });
     
     return c.text("DM sent");
+});
+
+// --- YENİ: WEBSOCKET SİNYALLEŞME ROTASI (ÖZEL DM KANALI BAĞLANTISI) ---
+app.get("/ws/dm/:channelId", async (c: AppContext) => {
+    
+    // 1. Yetkilendirme Kontrolü (Aynı JWT mantığı kullanılır)
+    const url = new URL(c.req.url);
+    const token = url.searchParams.get('token'); 
+
+    if (!token) { return c.json({ error: "Yetkilendirme token'ı eksik." }, 401); }
+    const payload = await verifyAndDecodeJwt(token, c.env); 
+    if (!payload) { return c.json({ error: "Geçersiz token." }, 401); }
+    
+    // 2. PrivateChat Durable Object'i Adresleme (Farklı DO)
+    const channelId = c.req.param("channelId");
+    const id = c.env.PRIVATE_CHAT.idFromName(channelId); // <<< PRIVATE_CHAT adreslendi
+    const stub = c.env.PRIVATE_CHAT.get(id);
+
+    // 3. Bağlantıyı DO'ya Transfer Etme (Aynı mantık)
+    const doUrl = new URL(c.req.url); 
+    doUrl.pathname = "/connect"; 
+
+    const newRequest = new Request(doUrl.toString(), c.req.raw);
+    newRequest.headers.set('X-User-ID', payload.userId);
+    newRequest.headers.set('X-Username', payload.username);
+
+    return stub.fetch(newRequest);
 });
 
 // Dosya Yükleme Rotası (R2'ye yükler)
