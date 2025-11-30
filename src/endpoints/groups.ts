@@ -19,7 +19,9 @@ export async function handleCreateGroup(request: Request, env: Env, payload: Aut
         }
         
         // 1. D1'de yeni grup kanalını oluştur (group_channels)
-        const groupId = crypto.randomUUID();
+        // Yeni grup kanalını oluştururken ID'ye ön ek ekleme:
+        const prefixedGroupId = 'GROUP-' + crypto.randomUUID();
+        const groupId = prefixedGroupId ;
         await env.BAYKUS_DB.prepare(
             "INSERT INTO group_channels (id, owner_id, name, created_at) VALUES (?, ?, ?, strftime('%s','now'))"
         ).bind(groupId, ownerId, groupName).run();
@@ -39,7 +41,7 @@ export async function handleCreateGroup(request: Request, env: Env, payload: Aut
         // 3. Başarılı yanıt
         return new Response(JSON.stringify({
             message: "Grup sohbeti başarıyla oluşturuldu.",
-            groupId: groupId
+            groupId: prefixedGroupId
         }), { status: 201 });
 
     } catch (error) {
