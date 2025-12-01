@@ -2,11 +2,13 @@
 
 import { Env } from '../types';
 import { AuthPayload } from '../auth/jwt'; 
-
+import { PERMISSIONS } from '../auth/permissions';
 // Gelen JSON gövdesinin yapısını tanımlıyoruz
 interface CreateServerBody {
     serverName: string;
 }
+
+// src/endpoints/rooms.ts (handleCreateServer)
 
 export async function handleCreateServer(request: Request, env: Env, payload: AuthPayload): Promise<Response> {
     try {
@@ -15,27 +17,56 @@ export async function handleCreateServer(request: Request, env: Env, payload: Au
             return new Response(JSON.stringify({ error: "Sunucu adı gerekli." }), { status: 400 });
         }
         
-        const prefixedGroupId = 'CHANNEL-' + crypto.randomUUID();
-        const serverId = prefixedGroupId ;
+        // DÜZELTME 1: ID'ler için temiz UUID kullanın (Çakışmayı önlemek için)
+        const serverId = crypto.randomUUID(); 
         const ownerId = payload.userId;
 
-        // 1. D1'e Sunucuyu Kaydetme (servers tablosu)
-        const serverQuery = env.BAYKUS_DB.prepare(
-            "INSERT INTO servers (id, name, owner_id, created_at) VALUES (?, ?, ?, ?)"
-        );
-        await serverQuery.bind(serverId, serverName, ownerId, new Date().toISOString()).run();
+        // --- ADIM A: TEMEL KAYITLAR (Foreign Key'leri korumak için ilk olmalı) ---
 
-        // 2. Kullanıcıyı Sunucu Üyesi Yapma (server_members tablosu)
+        // 1. D1'e Sunucuyu Kaydetme (servers tablosu) - BU İLK OLMALIDIR
         await env.BAYKUS_DB.prepare(
-            "INSERT INTO server_members (id, server_id, user_id, role, joined_at) VALUES (?, ?, ?, ?, ?)"
-        ).bind(crypto.randomUUID(), serverId, ownerId, 'owner', new Date().toISOString()).run();
+            "INSERT INTO servers (id, name, owner_id, created_at) VALUES (?, ?, ?, ?)"
+        ).bind(serverId, serverName, ownerId, new Date().toISOString()).run();
 
-        // 3. Varsayılan Kanal Ekleme (channels tablosu)
-        const defaultChannelId = crypto.randomUUID();
+        // 2. Varsayılan Kanal Ekleme (channels tablosu)
+        // Kanal ID'sine uygun ön eki ekle
+        const defaultChannelId = 'CHANNEL-' + crypto.randomUUID();
         await env.BAYKUS_DB.prepare(
             "INSERT INTO channels (id, server_id, name, type, topic, created_at) VALUES (?, ?, ?, ?, ?, ?)"
         ).bind(defaultChannelId, serverId, 'genel-sohbet', 'text', 'Sohbetin başladığı yer.', new Date().toISOString()).run();
 
+
+        // --- ADIM B: ROL VE ÜYELİK ATAMALARI (servers tablosuna bağlı) ---
+        
+        const ownerRoleId = crypto.randomUUID();
+        const memberRoleId = crypto.randomUUID();
+
+        const batchStatements = [
+            // 3. OWNER Rolü Tanımı (roles tablosu)
+            env.BAYKUS_DB.prepare(
+                "INSERT INTO roles (id, server_id, name, permissions, is_default) VALUES (?, ?, 'Owner', ?, FALSE)"
+            ).bind(ownerRoleId, serverId, PERMISSIONS.ADMINISTRATOR),
+            
+            // 4. MEMBER Rolü Tanımı (roles tablosu)
+            env.BAYKUS_DB.prepare(
+                "INSERT INTO roles (id, server_id, name, permissions, is_default) VALUES (?, ?, 'Member', ?, TRUE)"
+            ).bind(memberRoleId, serverId, PERMISSIONS.SEND_MESSAGES), 
+            
+            // 5. Owner'ı sunucuya üye yap (server_members tablosu) - ROLE SÜTUNU KALDIRILDI
+            env.BAYKUS_DB.prepare(
+                "INSERT INTO server_members (id, server_id, user_id, joined_at) VALUES (?, ?, ?, ?)"
+            ).bind(crypto.randomUUID(), serverId, ownerId, new Date().toISOString()),
+            
+            // 6. Owner'a Owner Rolünü Atama (member_roles tablosu)
+            env.BAYKUS_DB.prepare(
+                "INSERT INTO member_roles (user_id, role_id, server_id) VALUES (?, ?, ?)"
+            ).bind(ownerId, ownerRoleId, serverId)
+        ];
+        
+        // 7. Tüm toplu INSERT işlemlerini çalıştırma
+        await env.BAYKUS_DB.batch(batchStatements);
+
+        // ... (Başarılı dönüş kodu) ...
         return new Response(JSON.stringify({ 
             message: "Sunucu oluşturuldu.", 
             serverId: serverId,
