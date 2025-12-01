@@ -106,8 +106,8 @@ export async function handleJoinServer(request: Request, env: Env, payload: Auth
         } else {
             // Kayıt HİÇ YOKTU. YENİ KAYIT EKLE (İlk katılım)
             await env.BAYKUS_DB.prepare(
-                "INSERT INTO server_members (id, server_id, user_id, role, joined_at, left_at) VALUES (?, ?, ?, ?, ?, NULL)"
-            ).bind(crypto.randomUUID(), serverId, userId, 'member', new Date().toISOString()).run(); 
+                "INSERT INTO server_members (id, server_id, user_id, joined_at, left_at) VALUES (?, ?, ?, ?, NULL)"
+            ).bind(crypto.randomUUID(), serverId, userId, new Date().toISOString()).run(); 
         }
 
         
