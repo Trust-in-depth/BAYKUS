@@ -19,7 +19,7 @@ export async function handleCreateServer(request: Request, env: Env, payload: Au
         // DÜZELTME 1: ID'ler için temiz UUID kullanın (Çakışmayı önlemek için)
         const serverId = crypto.randomUUID(); 
         const ownerId = payload.userId;
-       const creationTimeFunc = "datetime('now')";
+        const creationTime = new Date().toISOString();
 
        // --- ADIM 1: GEREKLİ LOOKUP ID'LERİNİ ÇEKME ---
         // (Bu sorgular, lookup tablolarının dolu olduğunu varsayar)
@@ -45,12 +45,12 @@ export async function handleCreateServer(request: Request, env: Env, payload: Au
             // 1. SERVERS: Sunucuyu kaydetme
             env.BAYKUS_DB.prepare(
                 "INSERT INTO servers (server_id, owner_id, server_name, created_at) VALUES (?, ?, ?, ?)"
-            ).bind(serverId, ownerId, serverName, creationTimeFunc),
+            ).bind(serverId, ownerId, serverName, ),
 
             // 2. SERVER_MEMBERS: Owner'ı sunucu üyesi yapma (server_members COMPOSITE PK)
             env.BAYKUS_DB.prepare(
                 "INSERT INTO server_members (server_id, user_id, joined_at, left_at) VALUES (?, ?, ?, NULL)"
-            ).bind(serverId, ownerId, creationTimeFunc), 
+            ).bind(serverId, ownerId, creationTime), 
             
             // 3. OWNER Rolü Tanımı (roles)
             env.BAYKUS_DB.prepare(
@@ -70,12 +70,12 @@ export async function handleCreateServer(request: Request, env: Env, payload: Au
             // 6. CHANNELS: Varsayılan Kanalı Ekleme
             env.BAYKUS_DB.prepare(
                 "INSERT INTO channels (channel_id, server_id, channel_type_id, channel_name, created_at) VALUES (?, ?, ?, 'genel', ?)"
-            ).bind(generalChannelId, serverId, defaultTypeTextId, creationTimeFunc),
+            ).bind(generalChannelId, serverId, defaultTypeTextId, creationTime),
             
             // 7. CHANNEL_MEMBERS: Owner'ı varsayılan kanala üye yapma (channel_members COMPOSITE PK)
             env.BAYKUS_DB.prepare(
                 "INSERT INTO channel_members (channel_id, user_id, joined_at, left_at) VALUES (?, ?, ?, NULL)"
-            ).bind(generalChannelId, ownerId, creationTimeFunc)
+            ).bind(generalChannelId, ownerId, creationTime)
         ];
         
         // 7. Tüm toplu INSERT işlemlerini çalıştırma
@@ -100,7 +100,7 @@ export async function handleJoinServer(request: Request, env: Env, payload: Auth
     try {
         const { serverId } = await request.json() as { serverId: string };
         const userId = payload.userId;
-        const creationTimeFunc = "datetime('now')";
+        const creationTime = new Date().toISOString();
         
         if (!serverId) {
             return new Response(JSON.stringify({ error: "Sunucu ID'si gerekli." }), { status: 400 });
@@ -142,14 +142,14 @@ export async function handleJoinServer(request: Request, env: Env, payload: Auth
             // NOT: PK değişmediği için sadece left_at ve joined_at güncellenir.
             batchStatements.push(env.BAYKUS_DB.prepare(
                 "UPDATE server_members SET left_at = NULL, joined_at = ? WHERE server_id = ? AND user_id = ?"
-            ).bind(creationTimeFunc, serverId, userId)); 
+            ).bind(creationTime, serverId, userId)); 
             
         } else {
             // Kayıt HİÇ YOKTU. YENİ KAYIT EKLE (İlk katılım)
             // server_members (server_id, user_id) COMPOSITE PK kullandığı için id'ye ihtiyacı yok.
             batchStatements.push(env.BAYKUS_DB.prepare(
                 "INSERT INTO server_members (server_id, user_id, joined_at, left_at) VALUES (?, ?, ?, NULL)"
-            ).bind(serverId, userId, creationTimeFunc));
+            ).bind(serverId, userId, creationTime));
             
         // 2. YENİ ROL ATAMASI (Member Rolü)
             batchStatements.push(env.BAYKUS_DB.prepare(
@@ -161,7 +161,7 @@ export async function handleJoinServer(request: Request, env: Env, payload: Auth
         // Bu, kullanıcının kanala ilk kez katıldığından emin olmak için bir INSERT OR IGNORE gibi davranır.
         batchStatements.push(env.BAYKUS_DB.prepare(
             "INSERT INTO channel_members (channel_id, user_id, joined_at, left_at) VALUES (?, ?, ?, NULL)"
-        ).bind(defaultChannel, userId, creationTimeFunc));
+        ).bind(defaultChannel, userId, creationTime));
         
 
         // 4. BATCH İŞLEMİNİ ÇALIŞTIRMA
