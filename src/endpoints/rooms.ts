@@ -7,6 +7,7 @@ interface CreateServerBody {
     serverName: string;
 }
 
+
 // src/endpoints/rooms.ts (handleCreateServer)
 
 export async function handleCreateServer(request: Request, env: Env, payload: AuthPayload): Promise<Response> {
@@ -200,6 +201,11 @@ export async function handleJoinServer(request: Request, env: Env, payload: Auth
     }
 }
 
+
+
+
+
+
 // src/endpoints/rooms.ts (handleLeaveServer fonksiyonu - UX ODAKLI DÜZELTME)
 
 export async function handleLeaveServer(request: Request, env: Env, payload: AuthPayload): Promise<Response> {
@@ -227,11 +233,10 @@ export async function handleLeaveServer(request: Request, env: Env, payload: Aut
         // --- 1. D1'de üyeliği Soft Delete yapma ---
         // Bu sorgu, kaydı bulursa left_at'i günceller. Bulamazsa 0 değişiklik yapar (başarısız sayılmaz).
         const updateQuery = env.BAYKUS_DB.prepare(
-                    "UPDATE server_members SET left_at = datetime('now') WHERE server_id = ? AND user_id = ? AND left_at IS NULL"
-                );
-        
+                    "UPDATE server_members SET left_at = ? WHERE server_id = ? AND user_id = ? AND left_at IS NULL"
+                );    
         // Sorguyu çalıştırıyoruz; changes değerini KONTROL ETMİYORUZ.
-        await updateQuery.bind(serverId, userId).run(); 
+        await updateQuery.bind(new Date().toISOString(), serverId, userId).run(); 
         
         // --- 2. NDO BİLDİRİMİ GÖNDER (LEAVE) ---
         // Kayıt güncellense de güncellenmese de NDO yayını yapılır (UX için).
