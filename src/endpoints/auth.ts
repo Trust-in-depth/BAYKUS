@@ -3,6 +3,7 @@
 import { Env } from '../types';
 import * as jose from 'jose'; 
 import { AuthPayload } from '../auth/jwt';
+import { date } from 'zod/v4';
 
 // Giriş (Login) için beklenen JSON yapısı
 interface LoginBody {
@@ -51,7 +52,7 @@ export async function handleRegister(request: Request, env: Env): Promise<Respon
 
 // 1. users tablosuna kayıt (user_id, username, email, hashed_password)
         await env.BAYKUS_DB.prepare(
-            "INSERT INTO users (user_id, email, hashed_password, username, created_at) VALUES (?, ?, ?, ?, strftime('%s','now'))"
+            "INSERT INTO users (user_id, email, hashed_password, username, created_at) VALUES (?, ?, ?, ?, datetime('now') )"
         ).bind(userId, email, hashedPassword, lowerCaseUsername).run();
         
         // 2. user_details tablosuna kayıt (İlk Profil ve Varsayılan Durum)
