@@ -215,7 +215,7 @@ export async function handleLeaveServer(request: Request, env: Env, payload: Aut
         if (!serverId) {
             return new Response(JSON.stringify({ error: "Sunucu ID'si gerekli." }), { status: 400 });
         }
-
+        const leaveTime = new Date().toISOString();
 
         // --- ADIM 0: Güvenilir Kullanıcı Adını D1'den Çekme (NDO yayını için) ---
         // 'payload.username' yerine D1'den çekiyoruz, böylece NDO mesajı güvenilir olur.
@@ -228,16 +228,32 @@ export async function handleLeaveServer(request: Request, env: Env, payload: Aut
         }
         const username = userResult.username;
 
+// --- ADIM 1: SOFT DELETE İŞLEMLERİ (ATOMİK BATCH) ---
+        const batchStatements = [
+            // 1. SERVER_MEMBERS: Ana üyeliği pasifleştir (left_at'i ayarla)
+            env.BAYKUS_DB.prepare(
+                "UPDATE server_members SET left_at = ? WHERE server_id = ? AND user_id = ? AND left_at IS NULL"
+            ).bind(leaveTime, serverId, userId), 
 
-
-        // --- 1. D1'de üyeliği Soft Delete yapma ---
-        // Bu sorgu, kaydı bulursa left_at'i günceller. Bulamazsa 0 değişiklik yapar (başarısız sayılmaz).
-        const updateQuery = env.BAYKUS_DB.prepare(
-                    "UPDATE server_members SET left_at = ? WHERE server_id = ? AND user_id = ? AND left_at IS NULL"
-                );    
-        // Sorguyu çalıştırıyoruz; changes değerini KONTROL ETMİYORUZ.
-        await updateQuery.bind(new Date().toISOString(), serverId, userId).run(); 
+            // 2. CHANNEL_MEMBERS: Kullanıcının bu sunucudaki tüm kanallardan çıkmasını kaydet (Çok önemli!)
+            // Sunucunun tüm kanallarını bulup, o kanallardaki üyeliği güncellemek gerekir.
+            // EN VERİMLİ YOL: Bu sunucudaki tüm aktif kanal üyeliklerini güncelle.
+            env.BAYKUS_DB.prepare(`
+                UPDATE channel_members
+                SET left_at = ?
+                WHERE user_id = ? AND left_at IS NULL
+                  AND channel_id IN (SELECT channel_id FROM channels WHERE server_id = ?)
+            `).bind(leaveTime, userId, serverId),
+            
+            // 3. MEMBER_ROLES: Kullanıcının bu sunucudaki tüm rollerini sil (Rol atamalarını temizle)
+            // Kullanıcı ayrıldığı anda rolleri taşımamalıdır.
+            env.BAYKUS_DB.prepare(
+                "DELETE FROM member_roles WHERE user_id = ? AND server_id = ?"
+            ).bind(userId, serverId)
+        ];
         
+        // Tüm işlemleri atomik olarak çalıştır
+        await env.BAYKUS_DB.batch(batchStatements);        
         // --- 2. NDO BİLDİRİMİ GÖNDER (LEAVE) ---
         // Kayıt güncellense de güncellenmese de NDO yayını yapılır (UX için).
         const messagePayload = {
