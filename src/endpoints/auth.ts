@@ -36,22 +36,34 @@ export async function handleRegister(request: Request, env: Env): Promise<Respon
         }
         
         // E-mail Benzersizlik Kontrolü
-        const existingUser = await env.BAYKUS_DB.prepare("SELECT id FROM users WHERE email = ?").bind(email).first('id');
-        if (existingUser) {
-            return new Response(JSON.stringify({ error: "E-posta zaten kayıtlı." }), { status: 409 });
-        }
+
+    const existingUser = await env.BAYKUS_DB.prepare("SELECT user_id FROM users WHERE email = ?").bind(email).first('user_id');
+    if (existingUser) {
+        // Mesajı daha genel ve güvenli hale getir
+        return new Response(JSON.stringify({ 
+            error: "Kayıt işlemi başarısız oldu. Lütfen girdiğiniz bilgileri kontrol edin." 
+        }), { status: 409 }); 
+    }
 
         const hashedPassword = await hashPassword(password);
         const userId = crypto.randomUUID();
-
-        // >>> KRİTİK DÜZELTME: Kullanıcı adını veritabanı kısıtlamasına uyması için küçük harfe çeviriyoruz
         const lowerCaseUsername = username.toLowerCase(); 
 
+// 1. users tablosuna kayıt (user_id, username, email, hashed_password)
         await env.BAYKUS_DB.prepare(
-            // SQL sorgusunda 'username' alanına lowerCaseUsername'i, 'name' alanına orijinal username'i bind ediyoruz.
-            "INSERT INTO users (id, email, hashed_password, username, name, created_at) VALUES (?, ?, ?, ?, ?, ?)"
-        ).bind(userId, email, hashedPassword, lowerCaseUsername, username, new Date().toISOString()).run();
+            "INSERT INTO users (user_id, email, hashed_password, username, created_at) VALUES (?, ?, ?, ?, strftime('%s','now'))"
+        ).bind(userId, email, hashedPassword, lowerCaseUsername).run();
         
+        // 2. user_details tablosuna kayıt (İlk Profil ve Varsayılan Durum)
+        await env.BAYKUS_DB.prepare(
+            "INSERT INTO user_details (user_id, nick_name, online_status_id) VALUES (?, ?, 'STATUS_OFFLINE')"
+        ).bind(userId, username).run();
+
+
+// 3. Password Geçmişine Kayıt (history_of_password)
+        await env.BAYKUS_DB.prepare(
+             "INSERT INTO history_of_password (history_id, user_id, hashed_password) VALUES (?, ?, ?)"
+        ).bind(crypto.randomUUID(), userId, hashedPassword).run();
         return new Response(JSON.stringify({ message: "Kayıt başarılı.", userId: userId }), { status: 201 });
 
     } catch (error) {
@@ -61,41 +73,60 @@ export async function handleRegister(request: Request, env: Env): Promise<Respon
 }
 
 // GİRİŞ (LOGIN)
+// src/endpoints/auth.ts (handleLogin fonksiyonu)
+
 export async function handleLogin(request: Request, env: Env): Promise<Response> {
     try {
         const { email, password } = await request.json() as LoginBody;
         
-        const userResult = await env.BAYKUS_DB.prepare(
-            "SELECT id, hashed_password, username FROM users WHERE email = ?"
+        // 1. users tablosundan şifre ve user_id'yi çekme
+        const userAuthResult = await env.BAYKUS_DB.prepare(
+            // user_id, hashed_password ve username (küçük harfli) çekiliyor
+            "SELECT user_id, hashed_password, username FROM users WHERE email = ?"
         ).bind(email).all();
         
-        if (userResult.results.length === 0) {
+        if (userAuthResult.results.length === 0) {
             return new Response(JSON.stringify({ error: "E-posta veya şifre hatalı." }), { status: 401 });
         }
         
-        const user = userResult.results[0] as { id: string, hashed_password: string, username: string };
+        const authData = userAuthResult.results[0] as { user_id: string, hashed_password: string, username: string };
         const submittedHash = await hashPassword(password);
 
-        if (submittedHash !== user.hashed_password) {
+        if (submittedHash !== authData.hashed_password) {
              return new Response(JSON.stringify({ error: "E-posta veya şifre hatalı." }), { status: 401 });
         }
 
-        // JWT Oluşturma
+        // 2. user_details tablosundan görünen adı (nick_name) çekme
+        const detailsResult = await env.BAYKUS_DB.prepare(
+            "SELECT nick_name FROM user_details WHERE user_id = ?"
+        ).bind(authData.user_id).first('nick_name');
+
+        const nickName = detailsResult || authData.username; // Eğer nick_name yoksa, username kullanılır.
+
+
+        // 3. JWT Oluşturma (user_id ve nick_name kullanılır)
         const secret = new TextEncoder().encode(env.JWT_SECRET); 
         const alg = 'HS256';
 
         const jwt = await new jose.SignJWT({ 
-            'urn:baykus:uid': user.id, // User ID
-            'urn:baykus:name': user.username,
+            'urn:baykus:uid': authData.user_id, // Yeni sütun adı: user_id
+            'urn:baykus:name': nickName,
         })
         .setProtectedHeader({ alg })
-        .setIssuedAt() // <<< Token oluşturulma zamanı (iat)
-        .setIssuer('baykus-auth-service') // <<<oken'ı veren servis (iss)
-        .setAudience('baykus-platform') // <<< Token'ın hedefi (aud)
+        .setIssuedAt()
+        .setIssuer('baykus-auth-service')
+        .setAudience('baykus-platform')
         .setExpirationTime('24h')
         .sign(secret);
 
-        return new Response(JSON.stringify({ token: jwt, user: { id: user.id, username: user.username } }), { status: 200 });
+        return new Response(JSON.stringify({ 
+            token: jwt, 
+            user: { 
+                userId: authData.user_id, 
+                username: authData.username,
+                nickName: nickName
+            } 
+        }), { status: 200 });
 
     } catch (error) {
         console.error("Giriş hatası:", error);
