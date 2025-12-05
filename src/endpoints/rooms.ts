@@ -20,47 +20,63 @@ export async function handleCreateServer(request: Request, env: Env, payload: Au
         // DÜZELTME 1: ID'ler için temiz UUID kullanın (Çakışmayı önlemek için)
         const serverId = crypto.randomUUID(); 
         const ownerId = payload.userId;
+       const creationTimeFunc = "datetime('now')";
 
-        // --- ADIM A: TEMEL KAYITLAR (Foreign Key'leri korumak için ilk olmalı) ---
-
-        // 1. D1'e Sunucuyu Kaydetme (servers tablosu) - BU İLK OLMALIDIR
-        await env.BAYKUS_DB.prepare(
-            "INSERT INTO servers (id, name, owner_id, created_at) VALUES (?, ?, ?, ?)"
-        ).bind(serverId, serverName, ownerId, new Date().toISOString()).run();
-
-        // 2. Varsayılan Kanal Ekleme (channels tablosu)
-        // Kanal ID'sine uygun ön eki ekle
-        const defaultChannelId = 'CHANNEL-' + crypto.randomUUID();
-        await env.BAYKUS_DB.prepare(
-            "INSERT INTO channels (id, server_id, name, type, topic, created_at) VALUES (?, ?, ?, ?, ?, ?)"
-        ).bind(defaultChannelId, serverId, 'genel-sohbet', 'text', 'Sohbetin başladığı yer.', new Date().toISOString()).run();
-
-
-        // --- ADIM B: ROL VE ÜYELİK ATAMALARI (servers tablosuna bağlı) ---
+       // --- ADIM 1: GEREKLİ LOOKUP ID'LERİNİ ÇEKME ---
+        // (Bu sorgular, lookup tablolarının dolu olduğunu varsayar)
+        const typeTextResult = await env.BAYKUS_DB.prepare(
+            "SELECT channel_type_id FROM channels_types WHERE channel_type_name = 'Yazılı Kanal'"
+        ).first('channel_type_id');
         
+        if (!typeTextResult) {
+             return new Response(JSON.stringify({ error: "Sistem, Yazılı Kanal tipini bulamıyor." }), { status: 500 });
+        }
+        const defaultTypeTextId = typeTextResult;
+
+
+        // --- ADIM 2: ROL VE KANAL KAYITLARI İÇİN UUID'LERİ OLUŞTURMA ---
         const ownerRoleId = crypto.randomUUID();
         const memberRoleId = crypto.randomUUID();
+        const generalChannelId = crypto.randomUUID();
+        // --- ADIM A: TEMEL KAYITLAR (Foreign Key'leri korumak için ilk olmalı) ---
 
+
+// --- ADIM 3: ATOMİK BATCH İŞLEMLERİ (Veri Bütünlüğü İçin) ---
         const batchStatements = [
-            // 3. OWNER Rolü Tanımı (roles tablosu)
+            // 1. SERVERS: Sunucuyu kaydetme
             env.BAYKUS_DB.prepare(
-                "INSERT INTO roles (id, server_id, name, permissions, is_default) VALUES (?, ?, 'Owner', ?, FALSE)"
-            ).bind(ownerRoleId, serverId, PERMISSIONS.ADMINISTRATOR),
-            
-            // 4. MEMBER Rolü Tanımı (roles tablosu)
+                "INSERT INTO servers (server_id, owner_id, server_name, created_at) VALUES (?, ?, ?, ?)"
+            ).bind(serverId, ownerId, serverName, creationTimeFunc),
+
+            // 2. SERVER_MEMBERS: Owner'ı sunucu üyesi yapma (server_members COMPOSITE PK)
             env.BAYKUS_DB.prepare(
-                "INSERT INTO roles (id, server_id, name, permissions, is_default) VALUES (?, ?, 'Member', ?, TRUE)"
-            ).bind(memberRoleId, serverId, PERMISSIONS.SEND_MESSAGES), 
+                "INSERT INTO server_members (server_id, user_id, joined_at, left_at) VALUES (?, ?, ?, NULL)"
+            ).bind(serverId, ownerId, creationTimeFunc), 
             
-            // 5. Owner'ı sunucuya üye yap (server_members tablosu) - ROLE SÜTUNU KALDIRILDI
+            // 3. OWNER Rolü Tanımı (roles)
             env.BAYKUS_DB.prepare(
-                "INSERT INTO server_members (id, server_id, user_id, joined_at) VALUES (?, ?, ?, ?)"
-            ).bind(crypto.randomUUID(), serverId, ownerId, new Date().toISOString()),
+                "INSERT INTO roles (role_id, server_id, role_name, permissions, is_default) VALUES (?, ?, 'Owner', ?, FALSE)"
+            ).bind(ownerRoleId, serverId, 1023), // 1023: ADMIN İzinleri
             
-            // 6. Owner'a Owner Rolünü Atama (member_roles tablosu)
+            // 4. MEMBER Rolü Tanımı (roles)
+            env.BAYKUS_DB.prepare(
+                "INSERT INTO roles (role_id, server_id, role_name, permissions, is_default) VALUES (?, ?, 'Member', ?, TRUE)"
+            ).bind(memberRoleId, serverId, 64), // 64: Temel İletişim İzinleri
+            
+            // 5. MEMBER_ROLES: Owner'a Owner Rolünü Atama
             env.BAYKUS_DB.prepare(
                 "INSERT INTO member_roles (user_id, role_id, server_id) VALUES (?, ?, ?)"
-            ).bind(ownerId, ownerRoleId, serverId)
+            ).bind(ownerId, ownerRoleId, serverId),
+
+            // 6. CHANNELS: Varsayılan Kanalı Ekleme
+            env.BAYKUS_DB.prepare(
+                "INSERT INTO channels (channel_id, server_id, channel_type_id, channel_name, created_at) VALUES (?, ?, ?, 'genel', ?)"
+            ).bind(generalChannelId, serverId, defaultTypeTextId, creationTimeFunc),
+            
+            // 7. CHANNEL_MEMBERS: Owner'ı varsayılan kanala üye yapma (channel_members COMPOSITE PK)
+            env.BAYKUS_DB.prepare(
+                "INSERT INTO channel_members (channel_id, user_id, joined_at, left_at) VALUES (?, ?, ?, NULL)"
+            ).bind(generalChannelId, ownerId, creationTimeFunc)
         ];
         
         // 7. Tüm toplu INSERT işlemlerini çalıştırma
@@ -70,7 +86,7 @@ export async function handleCreateServer(request: Request, env: Env, payload: Au
         return new Response(JSON.stringify({ 
             message: "Sunucu oluşturuldu.", 
             serverId: serverId,
-            defaultChannelId: defaultChannelId,
+            defaultChannelId: generalChannelId,
         }), { status: 201 });
 
     } catch (error) {
@@ -85,32 +101,74 @@ export async function handleJoinServer(request: Request, env: Env, payload: Auth
     try {
         const { serverId } = await request.json() as { serverId: string };
         const userId = payload.userId;
-        const username = payload.username || 'Bilinmeyen Kullanıcı'; 
+        const creationTimeFunc = "datetime('now')";
         
         if (!serverId) {
             return new Response(JSON.stringify({ error: "Sunucu ID'si gerekli." }), { status: 400 });
         }
 
-        // 1. PASİF kaydı kontrol et ve AKTİF HALE GETİR (Soft Un-Delete)
-        const previousMember = await env.BAYKUS_DB.prepare(
-            "SELECT id FROM server_members WHERE server_id = ? AND user_id = ?"
-        ).bind(serverId, userId).first('id');
+
+        const userResult = await env.BAYKUS_DB.prepare(
+            "SELECT username FROM users WHERE user_id = ?"
+        ).bind(userId).first<{ username: string }>();
+
+        if (!userResult) {
+            return new Response(JSON.stringify({ error: "Kullanıcı bulunamadı." }), { status: 404 });
+        }
+        const username = userResult.username; // Artık 'username' tanımlı.
+
+       // 1. PASİF kaydı kontrol et (Kompozit PK'ya göre)
+        const memberCheck = await env.BAYKUS_DB.prepare(
+            "SELECT user_id, left_at FROM server_members WHERE server_id = ? AND user_id = ?"
+        ).bind(serverId, userId).first();
+
+        // Rol ve Kanal atamaları için gerekli bilgileri al
+        const defaultRole = await env.BAYKUS_DB.prepare(
+            "SELECT role_id FROM roles WHERE server_id = ? AND is_default = TRUE"
+        ).bind(serverId).first('role_id');
+        
+        const defaultChannel = await env.BAYKUS_DB.prepare(
+            "SELECT channel_id FROM channels WHERE server_id = ? AND channel_name = 'genel'"
+        ).bind(serverId).first('channel_id');
+        
+        if (!defaultRole || !defaultChannel) {
+             return new Response(JSON.stringify({ error: "Sunucu varsayılan rollerini/kanallarını bulamıyor." }), { status: 500 });
+        }
 
 
-        if (previousMember) {
+        const batchStatements = [];
+
+        if (memberCheck) {
             // Kayıt VARDI (pasif). UPDATE ile AKTİF hale getir (left_at = NULL).
-            await env.BAYKUS_DB.prepare(
-                "UPDATE server_members SET left_at = NULL, joined_at = strftime('%s','now') WHERE id = ?"
-            ).bind(previousMember).run(); 
+            // NOT: PK değişmediği için sadece left_at ve joined_at güncellenir.
+            batchStatements.push(env.BAYKUS_DB.prepare(
+                "UPDATE server_members SET left_at = NULL, joined_at = ? WHERE server_id = ? AND user_id = ?"
+            ).bind(creationTimeFunc, serverId, userId)); 
             
         } else {
             // Kayıt HİÇ YOKTU. YENİ KAYIT EKLE (İlk katılım)
-            await env.BAYKUS_DB.prepare(
-                "INSERT INTO server_members (id, server_id, user_id, joined_at, left_at) VALUES (?, ?, ?, ?, NULL)"
-            ).bind(crypto.randomUUID(), serverId, userId, new Date().toISOString()).run(); 
+            // server_members (server_id, user_id) COMPOSITE PK kullandığı için id'ye ihtiyacı yok.
+            batchStatements.push(env.BAYKUS_DB.prepare(
+                "INSERT INTO server_members (server_id, user_id, joined_at, left_at) VALUES (?, ?, ?, NULL)"
+            ).bind(serverId, userId, creationTimeFunc));
+            
+        // 2. YENİ ROL ATAMASI (Member Rolü)
+            batchStatements.push(env.BAYKUS_DB.prepare(
+                "INSERT INTO member_roles (user_id, role_id, server_id) VALUES (?, ?, ?)"
+            ).bind(userId, defaultRole, serverId));
         }
 
+        // 3. YENİ KANAL ÜYELİĞİ ATAMASI (Genel Kanal)
+        // Bu, kullanıcının kanala ilk kez katıldığından emin olmak için bir INSERT OR IGNORE gibi davranır.
+        batchStatements.push(env.BAYKUS_DB.prepare(
+            "INSERT INTO channel_members (channel_id, user_id, joined_at, left_at) VALUES (?, ?, ?, NULL)"
+        ).bind(defaultChannel, userId, creationTimeFunc));
         
+
+        // 4. BATCH İŞLEMİNİ ÇALIŞTIRMA
+        await env.BAYKUS_DB.batch(batchStatements);
+
+
         // 2. NDO BİLDİRİMİ GÖNDER (JOIN)
         const messagePayload = {
             type: "PRESENCE_UPDATE",
@@ -149,17 +207,29 @@ export async function handleLeaveServer(request: Request, env: Env, payload: Aut
     try {
         const { serverId } = await request.json() as { serverId: string };
         const userId = payload.userId;
-        const username = payload.username || 'Bilinmeyen Kullanıcı';
-        
         if (!serverId) {
             return new Response(JSON.stringify({ error: "Sunucu ID'si gerekli." }), { status: 400 });
         }
 
+
+        // --- ADIM 0: Güvenilir Kullanıcı Adını D1'den Çekme (NDO yayını için) ---
+        // 'payload.username' yerine D1'den çekiyoruz, böylece NDO mesajı güvenilir olur.
+        const userResult = await env.BAYKUS_DB.prepare(
+            "SELECT username FROM users WHERE user_id = ?"
+        ).bind(userId).first<{ username: string }>();
+
+        if (!userResult) {
+            return new Response(JSON.stringify({ error: "Kullanıcı bulunamadı." }), { status: 404 });
+        }
+        const username = userResult.username;
+
+
+
         // --- 1. D1'de üyeliği Soft Delete yapma ---
         // Bu sorgu, kaydı bulursa left_at'i günceller. Bulamazsa 0 değişiklik yapar (başarısız sayılmaz).
         const updateQuery = env.BAYKUS_DB.prepare(
-            "UPDATE server_members SET left_at = strftime('%s','now') WHERE server_id = ? AND user_id = ? AND left_at IS NULL"
-        );
+                    "UPDATE server_members SET left_at = datetime('now') WHERE server_id = ? AND user_id = ? AND left_at IS NULL"
+                );
         
         // Sorguyu çalıştırıyoruz; changes değerini KONTROL ETMİYORUZ.
         await updateQuery.bind(serverId, userId).run(); 
