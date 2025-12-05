@@ -45,7 +45,7 @@ export async function handleCreateServer(request: Request, env: Env, payload: Au
             // 1. SERVERS: Sunucuyu kaydetme
             env.BAYKUS_DB.prepare(
                 "INSERT INTO servers (server_id, owner_id, server_name, created_at) VALUES (?, ?, ?, ?)"
-            ).bind(serverId, ownerId, serverName, ),
+            ).bind(serverId, ownerId, serverName, creationTime),
 
             // 2. SERVER_MEMBERS: Owner'ı sunucu üyesi yapma (server_members COMPOSITE PK)
             env.BAYKUS_DB.prepare(
