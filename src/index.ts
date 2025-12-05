@@ -17,6 +17,12 @@ import { handleLeaveServer } from "./endpoints/rooms";
 import { jwtAuthMiddleware, AppContext } from "./auth/jwt_hono_middleware"; 
 import { handleFileUpload } from "./endpoints/files";
 import { handleCreateGroup } from "./endpoints/groups";
+import { handleCreateChannel } from "./endpoints/channels";
+import { handleUpdateChannel } from "./endpoints/channels";
+import { handleDeleteChannel } from "./endpoints/channels";
+
+
+
 // --- 2. TASK Importları ---
 // Hata almamak için tüm Task fonksiyonlarının ayrı dosyalardan geldiği varsayılır.
 import { TaskCreate } from "./endpoints/taskCreate";
@@ -315,6 +321,25 @@ app.post("/api/files/upload", async (c: AppContext) => {
     return handleFileUpload(c.req.raw, c.env, payload);
 });
 
+// --- 6C. KANAL YÖNETİMİ ROTASI (channels.ts dosyasından gelmeli) ---
+
+// Yeni Kanal Oluşturma Rotası (handleCreateChannel)
+app.post("/api/channels/create", async (c: AppContext) => {
+    const payload = c.get('userPayload');
+    return handleCreateChannel(c.req.raw, c.env, payload);
+});
+
+// Kanal Güncelleme Rotası (handleUpdateChannel)
+app.post("/api/channels/update", async (c: AppContext) => {
+    const payload = c.get('userPayload');
+    return handleUpdateChannel(c.req.raw, c.env, payload);
+});
+
+// Kanal Silme Rotası (handleDeleteChannel)
+app.post("/api/channels/delete", async (c: AppContext) => {
+    const payload = c.get('userPayload');
+    return handleDeleteChannel(c.req.raw, c.env, payload);
+});
 
 // ... (Diğer tüm mevcut DO rotaları benzer şekilde AppContext ile güncellenmeli ve /api/* altına taşınmalıdır.) ...
 

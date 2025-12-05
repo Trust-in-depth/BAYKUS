@@ -2,7 +2,6 @@
 
 import { Env } from '../types';
 import { AuthPayload } from '../auth/jwt'; 
-import { PERMISSIONS } from '../auth/permissions';
 // Gelen JSON gövdesinin yapısını tanımlıyoruz
 interface CreateServerBody {
     serverName: string;
@@ -262,3 +261,4 @@ export async function handleLeaveServer(request: Request, env: Env, payload: Aut
         return new Response(JSON.stringify({ error: "Sunucu hatası." }), { status: 500 });
     }
 }
+
