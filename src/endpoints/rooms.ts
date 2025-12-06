@@ -42,36 +42,36 @@ export async function handleCreateServer(request: Request, env: Env, payload: Au
 
 // --- ADIM 3: ATOMİK BATCH İŞLEMLERİ (Veri Bütünlüğü İçin) ---
         const batchStatements = [
-            // 1. SERVERS: Sunucuyu kaydetme
-            env.BAYKUS_DB.prepare(
-                "INSERT INTO servers (server_id, owner_id, server_name, created_at) VALUES (?, ?, ?, ?)"
-            ).bind(serverId, ownerId, serverName, creationTime),
+        // 1. SERVERS: Sunucuyu kaydetme
+        env.BAYKUS_DB.prepare("INSERT INTO servers (server_id, owner_id, server_name, created_at) VALUES (?, ?, ?, ?)").bind(serverId, ownerId, serverName, creationTime),
 
-            // 2. SERVER_MEMBERS: Owner'ı sunucu üyesi yapma (server_members COMPOSITE PK)
-            env.BAYKUS_DB.prepare(
-                "INSERT INTO server_members (server_id, user_id, joined_at, left_at) VALUES (?, ?, ?, NULL)"
-            ).bind(serverId, ownerId, creationTime), 
-            
-            // 3. OWNER Rolü Tanımı (roles)
-            env.BAYKUS_DB.prepare(
-                "INSERT INTO roles (role_id, server_id, role_name, permissions, is_default) VALUES (?, ?, 'Owner', ?, FALSE)"
-            ).bind(ownerRoleId, serverId, 1023), // 1023: ADMIN İzinleri
-            
-            // 5. MEMBER_ROLES: Owner'a Owner Rolünü Atama
-            env.BAYKUS_DB.prepare(
-                "INSERT INTO member_roles (user_id, role_id, server_id) VALUES (?, ?, ?)"
-            ).bind(ownerId, ownerRoleId, serverId),
+        // 2. SERVER_MEMBERS: Owner'ı sunucu üyesi yapma
+        env.BAYKUS_DB.prepare("INSERT INTO server_members (server_id, user_id, joined_at, left_at) VALUES (?, ?, ?, NULL)").bind(serverId, ownerId, creationTime), 
+        
+        // 3. ROLES: OWNER Rolü Tanımı
+        env.BAYKUS_DB.prepare("INSERT INTO roles (role_id, server_id, role_name, permissions, is_default) VALUES (?, ?, 'Owner', ?, FALSE)").bind(ownerRoleId, serverId, 1023), 
+        
+        // 4. SERVER_DETAILS: Varsayılan Konfigürasyonları Ekleme (YENİ EKLENDİ)
+        env.BAYKUS_DB.prepare(
+            "INSERT INTO server_details (server_id, welcome_message, system_log_channel_id) VALUES (?, ?, ?)"
+        ).bind(serverId, `Sunucuya hoş geldiniz! ${serverName}`, generalChannelId),
 
-            // 6. CHANNELS: Varsayılan Kanalı Ekleme
-            env.BAYKUS_DB.prepare(
-                "INSERT INTO channels (channel_id, server_id, channel_type_id, channel_name, created_at) VALUES (?, ?, ?, 'genel', ?)"
-            ).bind(generalChannelId, serverId, defaultTypeTextId, creationTime),
-            
-            // 7. CHANNEL_MEMBERS: Owner'ı varsayılan kanala üye yapma (channel_members COMPOSITE PK)
-            env.BAYKUS_DB.prepare(
-                "INSERT INTO channel_members (channel_id, user_id, joined_at, left_at) VALUES (?, ?, ?, NULL)"
-            ).bind(generalChannelId, ownerId, creationTime)
-        ];
+        // 5. CHANNELS: Varsayılan Kanalı Ekleme
+        env.BAYKUS_DB.prepare("INSERT INTO channels (channel_id, server_id, channel_type_id, channel_name, created_at) VALUES (?, ?, ?, 'genel', ?)").bind(generalChannelId, serverId, defaultTypeTextId, creationTime),
+        
+        // 6. CHANNEL_DETAILS: Varsayılan Kanal Konfigürasyonunu Ekleme (YENİ EKLENDİ)
+        env.BAYKUS_DB.prepare(
+            "INSERT INTO channel_details (channel_id, topic, slow_mode_seconds) VALUES (?, ?, ?)"
+        ).bind(generalChannelId, "Bu, Baykuş sunucusunun genel sohbet kanalıdır.", 0),
+        
+        // 7. MEMBER_ROLES: Owner'a Owner Rolünü Atama
+        env.BAYKUS_DB.prepare("INSERT INTO member_roles (user_id, role_id, server_id) VALUES (?, ?, ?)")
+            .bind(ownerId, ownerRoleId, serverId),
+        
+        // 8. CHANNEL_MEMBERS: Owner'ı varsayılan kanala üye yapma
+        env.BAYKUS_DB.prepare("INSERT INTO channel_members (channel_id, user_id, joined_at, left_at) VALUES (?, ?, ?, NULL)")
+            .bind(generalChannelId, ownerId, creationTime)
+    ];
         
         // 7. Tüm toplu INSERT işlemlerini çalıştırma
         await env.BAYKUS_DB.batch(batchStatements);
