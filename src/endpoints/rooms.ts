@@ -40,7 +40,6 @@ export async function handleCreateServer(request: Request, env: Env, payload: Au
         const generalChannelId = crypto.randomUUID();
         // --- ADIM A: TEMEL KAYITLAR (Foreign Key'leri korumak için ilk olmalı) ---
 
-
 // --- ADIM 3: ATOMİK BATCH İŞLEMLERİ (Veri Bütünlüğü İçin) ---
         const batchStatements = [
             // 1. SERVERS: Sunucuyu kaydetme
@@ -97,6 +96,8 @@ export async function handleCreateServer(request: Request, env: Env, payload: Au
 
 
 
+
+
 export async function handleJoinServer(request: Request, env: Env, payload: AuthPayload): Promise<Response> {
     try {
         const { serverId } = await request.json() as { serverId: string };
@@ -117,10 +118,18 @@ export async function handleJoinServer(request: Request, env: Env, payload: Auth
         }
         const username = userResult.username; // Artık 'username' tanımlı.
 
-       // 1. PASİF kaydı kontrol et (Kompozit PK'ya göre)
-        const memberCheck = await env.BAYKUS_DB.prepare(
-            "SELECT user_id, left_at FROM server_members WHERE server_id = ? AND user_id = ?"
-        ).bind(serverId, userId).first();
+    // 1. PASİF VEYA AKTİF kaydı kontrol et (left_at değerini çekmek önemli)
+    const memberCheck = await env.BAYKUS_DB.prepare(
+        "SELECT left_at FROM server_members WHERE server_id = ? AND user_id = ?"
+    ).bind(serverId, userId).first<{ left_at: string | null }>();
+
+
+    if (memberCheck) {
+        if (memberCheck.left_at === null) {
+            // ZATEN AKTİF: İşlem yapmaya gerek yok, başarıyla dön.
+            return new Response(JSON.stringify({ message: "Sunucuda zaten aktiftiniz.", serverId }), { status: 200 });
+        }
+            
 
         // Rol ve Kanal atamaları için gerekli bilgileri al
         const defaultRole = await env.BAYKUS_DB.prepare(
@@ -167,7 +176,7 @@ export async function handleJoinServer(request: Request, env: Env, payload: Auth
 
         // 4. BATCH İŞLEMİNİ ÇALIŞTIRMA
         await env.BAYKUS_DB.batch(batchStatements);
-
+    }
 
         // 2. NDO BİLDİRİMİ GÖNDER (JOIN)
         const messagePayload = {
