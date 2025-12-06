@@ -11,7 +11,6 @@ import { handleAddFriend } from "./endpoints/friends";
 import { handleGetTurnCredentials, handleJoinVoiceChannel, handleLeaveVoiceChannel } from "./endpoints/voice";
 import { handleOpenDM } from "./endpoints/dms";
 import { handleUpdateFriendStatus } from "./endpoints/friends"; 
-import { handleUnfriend } from "./endpoints/friends";
 import {handleJoinServer} from "./endpoints/rooms";
 import { handleLeaveServer } from "./endpoints/rooms";
 import { jwtAuthMiddleware, AppContext } from "./auth/jwt_hono_middleware"; 
@@ -136,11 +135,6 @@ app.post("/api/friends/add", async (c: AppContext) => {
 });
 
 
-// Arkadaşlıktan Çıkarma Rotası (Unfriend)
-app.post("/api/friends/unfriend", async (c: AppContext) => {
-    const payload = c.get('userPayload');
-    return handleUnfriend(c.req.raw, c.env, payload);
-});
 
 // DM Kanalı Açma (D1 ve PrivateChat DO)
 app.post("/api/dm/open", async (c: AppContext) => {

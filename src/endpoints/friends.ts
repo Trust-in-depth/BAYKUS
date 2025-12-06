@@ -5,7 +5,7 @@ import { AuthPayload } from '../auth/jwt';
 
 // --- GEREKLİ INTERFACE VE SABİTLER ---
 
-// NOT: Action tipi, UPDATE/UNFRIEND için tek bir fonksiyonda birleştirilmiştir.
+
 interface AddFriendBody { receiverUsername: string; }
 interface UpdateFriendBody {
     targetUsername: string; 
@@ -104,6 +104,18 @@ export async function handleAddFriend(request: Request, env: Env, payload: AuthP
         return new Response(JSON.stringify({ error: "Sunucu hatası." }), { status: 500 });
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 // ------------------------------------------------------------------
