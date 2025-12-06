@@ -101,6 +101,7 @@ CREATE TABLE IF NOT EXISTS servers (
     owner_id TEXT NOT NULL, 
     server_name TEXT NOT NULL, 
     created_at TEXT DEFAULT (datetime('now')) , 
+    deleted_at TEXT DEFAULT NULL,
     
     FOREIGN KEY (owner_id) REFERENCES users(user_id), 
     UNIQUE (server_name, owner_id) );
@@ -115,6 +116,7 @@ CREATE TABLE IF NOT EXISTS channels (
     channel_type_id TEXT NOT NULL, 
     channel_name TEXT NOT NULL, 
     created_at TEXT DEFAULT (datetime('now')),
+    deleted_at TEXT DEFAULT NULL,
 
     FOREIGN KEY (server_id) REFERENCES servers(server_id), 
     FOREIGN KEY (channel_type_id) REFERENCES channels_types(channel_type_id), 
@@ -194,16 +196,19 @@ CREATE TABLE IF NOT EXISTS voice_activity (
     FOREIGN KEY (user_id) REFERENCES users(user_id) );
 
 
-CREATE TABLE IF NOT EXISTS member_roles ( 
-    user_id TEXT NOT NULL, 
-    role_id TEXT NOT NULL, 
-    server_id TEXT NOT NULL, 
-    
-    PRIMARY KEY (user_id, role_id, server_id), 
-    FOREIGN KEY (user_id) REFERENCES users(user_id), 
-    FOREIGN KEY (role_id) REFERENCES roles(role_id), 
-    FOREIGN KEY (server_id) REFERENCES servers(server_id) );
+CREATE TABLE IF NOT EXISTS member_roles (
+    member_role_id TEXT PRIMARY KEY, -- Yeni PK
+    user_id TEXT NOT NULL,
+    role_id TEXT NOT NULL,
+    server_id TEXT NOT NULL,
+    assigned_at TEXT DEFAULT (datetime('now')),
+    left_at TEXT DEFAULT NULL,       -- SOFT DELETE İÇİN EKLENDİ
 
+    UNIQUE (user_id, role_id, server_id), -- İlişkiyi garanti altına alır.
+    FOREIGN KEY (user_id) REFERENCES users(user_id),
+    FOREIGN KEY (role_id) REFERENCES roles(role_id),
+    FOREIGN KEY (server_id) REFERENCES servers(server_id)
+);
 
 CREATE TABLE IF NOT EXISTS friends ( 
     user_id TEXT NOT NULL, 

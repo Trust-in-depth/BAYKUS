@@ -279,12 +279,6 @@ export async function handleLeaveServer(request: Request, env: Env, payload: Aut
             env.BAYKUS_DB.prepare(
                 "DELETE FROM member_roles WHERE user_id = ? AND server_id = ?"
             ).bind(userId, serverId),
-            
-        // 3. MEMBER_ROLES: Kullanıcının bu sunucudaki tüm rollerini sil (Rol atamalarını temizle)
-            // Kullanıcı ayrıldığı anda rolleri taşımamalıdır.
-            env.BAYKUS_DB.prepare(
-                "DELETE FROM roles WHERE user_id = ? AND server_id = ?"
-            ).bind(userId, serverId)
         ];
 
         
@@ -320,6 +314,9 @@ export async function handleLeaveServer(request: Request, env: Env, payload: Aut
         return new Response(JSON.stringify({ error: "Sunucu hatası." }), { status: 500 });
     }
 }
+
+
+
 
 
 
