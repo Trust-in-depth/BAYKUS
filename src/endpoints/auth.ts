@@ -105,6 +105,36 @@ export async function handleLogin(request: Request, env: Env): Promise<Response>
         const nickName = detailsResult || authData.username; // Eğer nick_name yoksa, username kullanılır.
 
 
+// --- YENİ ADIM 1: D1'DE ONLINE DURUMUNU GÜNCELLE ---
+        await env.BAYKUS_DB.prepare(
+            "UPDATE user_details SET online_status_id = 'STATUS_ONLINE' WHERE user_id = ?"
+        ).bind(authData.user_id).run();
+        
+        // --- YENİ ADIM 2: NDO YAYINI İÇİN PAYLOAD HAZIRLA ---
+        
+        const messagePayload = {
+            type: "PRESENCE_UPDATE",
+            data: {
+                action: "ONLINE", // Ya da JOIN, ancak login için ONLINE daha spesifiktir
+                userId: authData.user_id,
+                username: authData.username,
+                nickName: nickName,
+                timestamp: Date.now()
+            }
+        };
+
+        const notificationId = env.NOTIFICATION.idFromName("global"); 
+        const notificationStub = env.NOTIFICATION.get(notificationId);
+        
+        // Asenkron yayınlama (Worker'ın /presence rotasını tetikler)
+        await notificationStub.fetch("/presence", { 
+            method: "POST",
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(messagePayload),
+        }).catch(e => console.error(`Login bildirimi yayınlanırken hata oluştu:`, e));
+
+
+
         // 3. JWT Oluşturma (user_id ve nick_name kullanılır)
         const secret = new TextEncoder().encode(env.JWT_SECRET); 
         const alg = 'HS256';
