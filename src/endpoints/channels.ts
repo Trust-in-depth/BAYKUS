@@ -15,6 +15,10 @@ interface UpdateChannelBody {
     newType?: string;
 }
 
+interface DeleteChannelBody {
+    channelId: string;
+}
+
 // Gerekli iznin bitmask değerini varsayıyoruz. Bu, PERMISSIONS objenizde tanımlanmalıdır.
 // const CAN_CREATE_CHANNEL = PERMISSIONS.MANAGE_CHANNELS; // Örn: 256 veya 512
 
@@ -64,7 +68,35 @@ export async function handleCreateChannel(request: Request, env: Env, payload: A
 
         await env.BAYKUS_DB.batch(batchStatements);
 
-        // --- ADIM 3: BAŞARILI YANIT ---
+
+// --- ADIM 3: NDO BİLDİRİMİ (Kanalın Oluşturulduğunu Yayınlama) ---
+        // Sunucudaki tüm aktif kullanıcılara anlık bildirim gönderilir.
+        const messagePayload = {
+            type: "CHANNEL_UPDATE",
+            data: { 
+                action: "CREATED", 
+                serverId: serverId,
+                channelId: newChannelId,
+                channelName: channelName, // Kanal adını front-end'in kolaylığı için ekliyoruz
+                typeId: typeId,
+                creatorId: userId,
+                timestamp: Date.now()
+            }
+        };
+
+        const notificationId = env.NOTIFICATION.idFromName("global");
+        const notificationStub = env.NOTIFICATION.get(notificationId);
+        const doUrl = new URL("http://do/presence");
+        
+        // Asenkron yayınlama
+        await notificationStub.fetch(doUrl.toString(), {
+            method: "POST",
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(messagePayload),
+        }).catch(e => console.error(`Kanal oluşturma bildirimi yayınlanırken hata oluştu:`, e));
+
+
+        // --- ADIM 4: BAŞARILI YANIT ---
         return new Response(JSON.stringify({ 
             message: "Kanal başarıyla oluşturuldu.", 
             channelId: newChannelId,
@@ -75,6 +107,10 @@ export async function handleCreateChannel(request: Request, env: Env, payload: A
         return new Response(JSON.stringify({ error: "Sunucu hatası." }), { status: 500 });
     }
 }
+
+
+
+
 
 
 
@@ -140,10 +176,15 @@ export async function handleUpdateChannel(request: Request, env: Env, payload: A
 
 
 
+
+
+
+
 export async function handleDeleteChannel(request: Request, env: Env, payload: AuthPayload): Promise<Response> {
     try {
-        const { channelId } = await request.json() as { channelId: string };
-        
+        const { channelId } = await request.json() as DeleteChannelBody;
+        const deletionTime = new Date().toISOString();
+
         // 1. KRİTİK YETKİ KONTROLÜ (ADMINISTRATOR veya DELETE_CHANNEL izni)
      // handleCreateChannel'dan kopyalanan yetki kontrolü
 const userPermissions = await env.BAYKUS_DB.prepare(`
@@ -159,24 +200,51 @@ const totalPermissions = userPermissions?.total_permissions || 0;
 if ((totalPermissions & PERMISSIONS.MANAGE_CHANNELS) === 0) { 
     return new Response(JSON.stringify({ error: "Kanal silme yetkiniz yok." }), { status: 403 });
 }
-        
-        // 2. Tüm Alt Kayıtları Silme (CASCADE Delete Mantığı)
-        const deleteStatements = [
-            // Kanalla ilgili tüm üyelikleri sil
-            env.BAYKUS_DB.prepare("DELETE FROM channel_members WHERE channel_id = ?").bind(channelId),
+
+// --- ADIM 2: SOFT DELETE (ARŞİVLEME) MANTIĞI ---
+        const batchStatements = [
+            // 1. CHANNELS: Ana kanal kaydını pasifleştir (HARD DELETE yerine UPDATE)
+            env.BAYKUS_DB.prepare(
+                "UPDATE channels SET deleted_at = ? WHERE channel_id = ?"
+            ).bind(deletionTime, channelId),
             
-            // Kanaldaki tüm mesajların meta verisini sil (R2'deki içeriğin silinmesi ayrı bir iş mantığıdır!)
-            env.BAYKUS_DB.prepare("DELETE FROM channel_messages WHERE channel_id = ?").bind(channelId),
+            // 2. CHANNEL_MEMBERS: Kanaldaki tüm aktif üyelikleri pasifleştir (Soft Delete)
+            env.BAYKUS_DB.prepare(
+                "UPDATE channel_members SET left_at = ? WHERE channel_id = ? AND left_at IS NULL"
+            ).bind(deletionTime, channelId),
             
-            // Kanal detaylarını sil
-            env.BAYKUS_DB.prepare("DELETE FROM channel_details WHERE channel_id = ?").bind(channelId),
+            // 3. CHANNEL_MESSAGES: Mesajları pasifleştir/silindi olarak işaretle (Soft Delete)
+            env.BAYKUS_DB.prepare(
+                "UPDATE channel_messages SET is_deleted = TRUE WHERE channel_id = ?"
+            ).bind(channelId),
             
-            // Ana kanal kaydını sil (EN SONDA OLMALI)
-            env.BAYKUS_DB.prepare("DELETE FROM channels WHERE channel_id = ?").bind(channelId)
+            // 4. CHANNEL_DETAILS: Kanal detaylarını pasifleştir (Eğer channels tablosu deleted_at'i kontrol etmiyorsa)
+            // NOT: channel_details tablosunda deleted_at sütunu olmadığını varsayıyoruz. 
+            // Bu yüzden bu tabloya dokunmuyoruz. Ana kontrol channels tablosu üzerinden yapılacaktır.
         ];
         
-        await env.BAYKUS_DB.batch(deleteStatements);
+        await env.BAYKUS_DB.batch(batchStatements);
         
+        // 5. NDO BİLDİRİMİ (Kanalın silindiğini yayınla)
+const channelUpdatePayload = {
+    type: "CHANNEL_UPDATE",
+    data: { 
+        action: "ARCHIVED", // Soft Delete yapıldığı için DELETED yerine ARCHIVED kullanmak daha doğru
+        channelId: channelId,
+        message: "Kanal kurucu tarafından arşivlendi."
+    }
+};
+
+const notificationId = env.NOTIFICATION.idFromName("global");
+const notificationStub = env.NOTIFICATION.get(notificationId);
+const doUrl = new URL("http://do/presence"); // NDO'nun POST rotası
+
+// Asenkron yayınlama
+await notificationStub.fetch(doUrl.toString(), {
+    method: "POST",
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(channelUpdatePayload),
+}).catch(e => console.error(`Kanal silme bildirimi yayınlanırken hata oluştu:`, e));
         return new Response(JSON.stringify({ message: "Kanal başarıyla silindi." }), { status: 200 });
 
     } catch (error) {
