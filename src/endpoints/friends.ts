@@ -21,6 +21,7 @@ const STATUS_IDS = {
     ACCEPTED:   'FRIEND_ACCEPTED',
     REJECTED:   'FRIEND_REJECTED',   // Reddetme ve İptal/Çıkarma (Arşivleme)
     BLOCKED:    'FRIEND_BLOCKED',
+    UNFRIENDED: 'FRIEND_UNFRIENDED'
     // UNFRIENDED: 'FRIEND_UNFRIENDED' (Dört durum kısıtlamasına uyum için REJECTED kullanıldı)
 };
 
@@ -157,7 +158,7 @@ export async function handleUpdateFriendStatus(request: Request, env: Env, paylo
                 requiredStatus = [STATUS_IDS.PENDING]; // Red sadece beklemede olanlara yapılır (Arşivleme).
                 break;
             case 'unfriend':
-                targetStatus = STATUS_IDS.REJECTED; // Arkadaşlığı sonlandırma (Arşivleme).
+                targetStatus = STATUS_IDS.UNFRIENDED; // Arkadaşlığı sonlandırma (Arşivleme).
                 requiredStatus = [STATUS_IDS.ACCEPTED]; // Unfriend sadece kabul edilmiş olana yapılır.
                 break;
             case 'block':
