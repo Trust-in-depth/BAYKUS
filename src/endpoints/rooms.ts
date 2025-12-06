@@ -113,11 +113,11 @@ export async function handleJoinServer(request: Request, env: Env, payload: Auth
         const { serverId } = await request.json() as JoinServerBody;
         const userId = payload.userId;
         const creationTime = new Date().toISOString();
+        const memberRoleIdPK = crypto.randomUUID();
         
         if (!serverId) {
             return new Response(JSON.stringify({ error: "Sunucu ID'si gerekli." }), { status: 400 });
         }
-
 
         const userResult = await env.BAYKUS_DB.prepare(
             "SELECT username FROM users WHERE user_id = ?"
@@ -183,8 +183,8 @@ if (isReturningMember) {
 
     // 3A. MEMBER_ROLES: Rolleri yeniden ata (LeaveServer'da sildiğimiz için zorunlu INSERT)
     batchStatements.push(env.BAYKUS_DB.prepare(
-        "INSERT INTO member_roles (user_id, role_id, server_id) VALUES (?, ?, ?)"
-    ).bind(userId, defaultRole, serverId));
+        "INSERT INTO member_roles (member_role_id, user_id, role_id, server_id, assigned_at, left_at) VALUES (?, ?, ?, ?, ?, NULL)"
+    ).bind(memberRoleIdPK, userId, defaultRole, serverId, creationTime));
 
 } else if (isNewMember) {
     // 1B. YENİ ÜYE: Tüm kayıtları INSERT et.
@@ -196,8 +196,8 @@ if (isReturningMember) {
     
     // b) MEMBER_ROLES INSERT
     batchStatements.push(env.BAYKUS_DB.prepare(
-        "INSERT INTO member_roles (user_id, role_id, server_id) VALUES (?, ?, ?)"
-    ).bind(userId, defaultRole, serverId));
+        "INSERT INTO member_roles (member_role_id, user_id, role_id, server_id, assigned_at, left_at) VALUES (?, ?, ?, ?, ?, NULL)"
+    ).bind(memberRoleIdPK, userId, defaultRole, serverId, creationTime));
     
     // c) CHANNEL_MEMBERS INSERT
     batchStatements.push(env.BAYKUS_DB.prepare(
