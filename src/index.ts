@@ -6,7 +6,7 @@ import { Hono } from "hono";
 // --- 1. JWT, AUTH ve D1 API Importları ---
 // Bu import'lar, Endpoint dosyalarınızdaki ve Middleware'deki fonksiyonları çeker.
 import { handleRegister, handleLogin } from "./endpoints/auth";
-import { handleCreateServer } from "./endpoints/rooms";
+import { handleCreateServer, handleDeleteServer } from "./endpoints/rooms";
 import { handleAddFriend } from "./endpoints/friends";
 import { handleGetTurnCredentials, handleJoinVoiceChannel, handleLeaveVoiceChannel } from "./endpoints/voice";
 import { handleOpenDM } from "./endpoints/dms";
@@ -174,6 +174,12 @@ app.post("/api/servers/leave", async (c: AppContext) => {
     return handleLeaveServer(c.req.raw, c.env, payload);
 });
 
+
+// Sunucu Silme Rotası
+app.post("/api/servers/delete", async (c: AppContext) => {
+    const payload = c.get('userPayload'); // Yetkili kullanıcıyı al
+    return handleDeleteServer(c.req.raw, c.env, payload);
+});
 
 
 
