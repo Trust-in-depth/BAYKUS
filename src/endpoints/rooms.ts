@@ -323,7 +323,6 @@ export async function handleLeaveServer(request: Request, env: Env, payload: Aut
 
 
 // src/endpoints/rooms.ts (handleDeleteServer - SOFT DELETE İLE GÜNCELLENDİ)
-
 export async function handleDeleteServer(request: Request, env: Env, payload: AuthPayload): Promise<Response> {
     try {
         const { serverId } = await request.json() as { serverId: string };
@@ -334,36 +333,73 @@ export async function handleDeleteServer(request: Request, env: Env, payload: Au
             return new Response(JSON.stringify({ error: "Sunucu ID'si gerekli." }), { status: 400 });
         }
 
-        // --- ADIM 1: YETKİ KONTROLÜ (Owner Kontrolü) ---
-        const serverOwner = await env.BAYKUS_DB.prepare(
+        // --- ADIM 1: YETKİ VE DURUM KONTROLÜ ---
+        const serverInfo = await env.BAYKUS_DB.prepare(
             "SELECT owner_id, deleted_at FROM servers WHERE server_id = ?"
         ).bind(serverId).first<{ owner_id: string, deleted_at: string | null }>();
 
-        // Sunucu hiç yoksa veya zaten silinmişse 404 dön.
-        if (!serverOwner || serverOwner.deleted_at !== null) {
+        if (!serverInfo || serverInfo.deleted_at !== null) {
             return new Response(JSON.stringify({ error: "Sunucu bulunamadı veya daha önce silinmiş." }), { status: 404 });
         }
-
-        // Kullanıcı Owner değilse (veya Admin değilse)
-        if (serverOwner.owner_id !== userId) {
+        if (serverInfo.owner_id !== userId) {
             return new Response(JSON.stringify({ error: "Sunucuyu silme yetkiniz yok. Sadece kurucu silebilir." }), { status: 403 });
         }
 
-        // --- ADIM 2: SOFT DELETE (Sunucuyu pasif hale getir) ---
-        // SADECE servers tablosu güncellenir. Alt tablolar (channel_members, roles, R2) korunur.
-        const updateStatement = env.BAYKUS_DB.prepare(
-            "UPDATE servers SET deleted_at = ? WHERE server_id = ?"
-        ).bind(deletionTime, serverId);
+        // --- ADIM 2: ARŞİVLEME İŞLEMLERİ (ATOMİK BATCH) ---
+        // Sunucuya ait tüm temel bileşenlerin deleted_at sütununu güncelle.
+        const batchStatements = [
+            // 1. SERVERS: Ana kaydı pasifleştir (Kritik)
+            env.BAYKUS_DB.prepare(
+                "UPDATE servers SET deleted_at = ? WHERE server_id = ?"
+            ).bind(deletionTime, serverId),
 
-        await updateStatement.run(); // Tek bir UPDATE işlemi
+            // 2. CHANNELS: Tüm kanalları pasifleştir
+            env.BAYKUS_DB.prepare(
+                "UPDATE channels SET deleted_at = ? WHERE server_id = ?"
+            ).bind(deletionTime, serverId),
 
+            // 3. SERVER_DETAILS: Server detaylarını pasifleştir (Opsiyonel ama iyi uygulama)
+            env.BAYKUS_DB.prepare(
+                "UPDATE server_details SET deleted_at = ? WHERE server_id = ?"
+            ).bind(deletionTime, serverId),
+            
+            // 4. SERVER_MEMBERS: Tüm üyeleri sunucudan ayrılmış olarak işaretle (Kullanıcılar için LEAVE)
+            env.BAYKUS_DB.prepare(
+                "UPDATE server_members SET left_at = ? WHERE server_id = ? AND left_at IS NULL"
+            ).bind(deletionTime, serverId),
+
+            // 5. MEMBER_ROLES: Tüm rol atamalarını pasifleştir (Eğer member_roles'da left_at varsa UPDATE, yoksa DELETE)
+            // Varsayım: member_roles tabloda left_at sütunu var.
+            env.BAYKUS_DB.prepare(
+                "UPDATE member_roles SET left_at = ? WHERE server_id = ? AND left_at IS NULL"
+            ).bind(deletionTime, serverId)
+        ];
+
+        await env.BAYKUS_DB.batch(batchStatements);
+
+        // --- ADIM 3: NDO BİLDİRİMİ (Anlık Yayın) ---
+        const messagePayload = {
+            type: "SERVER_UPDATE",
+            data: { 
+                action: "ARCHIVED", 
+                serverId: serverId, 
+                deleted_at: deletionTime,
+                message: `Sunucu kurucu tarafından silinmiştir/arşivlenmiştir.`
+            }
+        };
         
-        // --- ADIM 3: NDO BİLDİRİMİ (Sunucunun pasifleştiğini herkese duyur) ---
-        // (NDO yayını kodunuzu buraya eklemeyi unutmayın)
-
+        const notificationId = env.NOTIFICATION.idFromName("global");
+        const notificationStub = env.NOTIFICATION.get(notificationId);
+        
+        await notificationStub.fetch("/presence", { 
+            method: "POST",
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(messagePayload),
+        }).catch(e => console.error(`Arşivleme bildirimi yayınlanırken hata oluştu:`, e));
+        
         
         // --- ADIM 4: BAŞARILI YANIT ---
-        return new Response(JSON.stringify({ message: "Sunucu başarıyla silindi ve arşivlendi. Veriler log amaçlı saklanmaya devam edecektir." }), { status: 200 });
+        return new Response(JSON.stringify({ message: "Sunucu başarıyla arşivlendi. Veriler log amaçlı saklanmaya devam edecektir." }), { status: 200 });
 
     } catch (error) {
         console.error("Sunucu silme hatası:", error);
