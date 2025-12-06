@@ -57,11 +57,6 @@ export async function handleCreateServer(request: Request, env: Env, payload: Au
                 "INSERT INTO roles (role_id, server_id, role_name, permissions, is_default) VALUES (?, ?, 'Owner', ?, FALSE)"
             ).bind(ownerRoleId, serverId, 1023), // 1023: ADMIN İzinleri
             
-            // 4. MEMBER Rolü Tanımı (roles)
-            env.BAYKUS_DB.prepare(
-                "INSERT INTO roles (role_id, server_id, role_name, permissions, is_default) VALUES (?, ?, 'Member', ?, TRUE)"
-            ).bind(memberRoleId, serverId, 64), // 64: Temel İletişim İzinleri
-            
             // 5. MEMBER_ROLES: Owner'a Owner Rolünü Atama
             env.BAYKUS_DB.prepare(
                 "INSERT INTO member_roles (user_id, role_id, server_id) VALUES (?, ?, ?)"
