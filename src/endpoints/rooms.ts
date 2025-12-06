@@ -2,9 +2,19 @@
 
 import { Env } from '../types';
 import { AuthPayload } from '../auth/jwt'; 
+import { int } from 'zod/v4';
 // Gelen JSON gövdesinin yapısını tanımlıyoruz
 interface CreateServerBody {
     serverName: string;
+}
+interface DeleteServerBody {
+    serverId: string;
+}
+interface LeaveServerBody {
+    serverId: string;
+}
+interface JoinServerBody {
+    serverId: string;
 }
 
 
@@ -95,9 +105,12 @@ export async function handleCreateServer(request: Request, env: Env, payload: Au
 
 
 
+
+
+
 export async function handleJoinServer(request: Request, env: Env, payload: AuthPayload): Promise<Response> {
     try {
-        const { serverId } = await request.json() as { serverId: string };
+        const { serverId } = await request.json() as JoinServerBody;
         const userId = payload.userId;
         const creationTime = new Date().toISOString();
         
@@ -237,11 +250,14 @@ if (batchStatements.length > 0) {
 
 
 
+
+
+
 // src/endpoints/rooms.ts (handleLeaveServer fonksiyonu - UX ODAKLI DÜZELTME)
 
 export async function handleLeaveServer(request: Request, env: Env, payload: AuthPayload): Promise<Response> {
     try {
-        const { serverId } = await request.json() as { serverId: string };
+        const { serverId } = await request.json() as LeaveServerBody;
         const userId = payload.userId;
         if (!serverId) {
             return new Response(JSON.stringify({ error: "Sunucu ID'si gerekli." }), { status: 400 });
@@ -322,10 +338,12 @@ export async function handleLeaveServer(request: Request, env: Env, payload: Aut
 
 
 
+
+
 // src/endpoints/rooms.ts (handleDeleteServer - SOFT DELETE İLE GÜNCELLENDİ)
 export async function handleDeleteServer(request: Request, env: Env, payload: AuthPayload): Promise<Response> {
     try {
-        const { serverId } = await request.json() as { serverId: string };
+        const { serverId } = await request.json() as DeleteServerBody;
         const userId = payload.userId;
         const deletionTime = new Date().toISOString();
         
