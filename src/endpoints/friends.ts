@@ -6,7 +6,10 @@ import { AuthPayload } from '../auth/jwt';
 // --- GEREKLİ INTERFACE VE SABİTLER ---
 
 
-interface AddFriendBody { receiverUsername: string; }
+interface AddFriendBody { 
+    receiverUsername: string;
+ }
+ 
 interface UpdateFriendBody {
     targetUsername: string; 
     action: 'accept' | 'reject' | 'block' | 'unfriend'; // Yeni durum eylemleri
@@ -26,9 +29,12 @@ const STATUS_IDS = {
 // (Veritabanındaki Composite PK'ya uygunluk için kritik)
 async function getSortedUserIds(env: Env, currentUsername: string, targetUsername: string): Promise<{ user1: string, user2: string, receiverId: string } | null> {
     
+    const lowerCurrentUsername = currentUsername.toLowerCase();
+    const lowerTargetUsername = targetUsername.toLowerCase();
+
     const [currentUserResult, targetUserResult] = await Promise.all([
-        env.BAYKUS_DB.prepare("SELECT user_id FROM users WHERE username = ?").bind(currentUsername).first<{user_id: string}>(),
-        env.BAYKUS_DB.prepare("SELECT user_id FROM users WHERE username = ?").bind(targetUsername).first<{user_id: string}>(),
+        env.BAYKUS_DB.prepare("SELECT user_id FROM users WHERE username = ?").bind(lowerCurrentUsername).first<{user_id: string}>(),
+        env.BAYKUS_DB.prepare("SELECT user_id FROM users WHERE username = ?").bind(lowerTargetUsername).first<{user_id: string}>(),
     ]);
 
     const currentId = currentUserResult?.user_id;
