@@ -151,7 +151,7 @@ export async function handleUpdateFriendStatus(request: Request, env: Env, paylo
         switch (action) {
             case 'accept':
                 targetStatus = STATUS_IDS.ACCEPTED;
-                requiredStatus = [STATUS_IDS.PENDING,STATUS_IDS.UNFRIENDED,STATUS_IDS.REJECTED]; // Kabul sadece beklemede olanlara yapılır.
+                requiredStatus = [STATUS_IDS.PENDING]; // Kabul sadece beklemede olanlara yapılır.
                 break;
             case 'reject':
                 targetStatus = STATUS_IDS.REJECTED;
