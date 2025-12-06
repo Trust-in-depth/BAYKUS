@@ -44,7 +44,7 @@ export async function handleCreateServer(request: Request, env: Env, payload: Au
 // --- ADIM 3: ATOMİK BATCH İŞLEMLERİ (Veri Bütünlüğü İçin) ---
         const batchStatements = [
         // 1. SERVERS: Sunucuyu kaydetme
-        env.BAYKUS_DB.prepare("INSERT INTO servers (server_id, owner_id, server_name, created_at) VALUES (?, ?, ?, ?)").bind(serverId, ownerId, serverName, creationTime),
+        env.BAYKUS_DB.prepare("INSERT INTO servers (server_id, owner_id, server_name, created_at,deleted_at) VALUES (?, ?, ?, ?, NULL)").bind(serverId, ownerId, serverName, creationTime),
 
         // 2. SERVER_MEMBERS: Owner'ı sunucu üyesi yapma
         env.BAYKUS_DB.prepare("INSERT INTO server_members (server_id, user_id, joined_at, left_at) VALUES (?, ?, ?, NULL)").bind(serverId, ownerId, creationTime), 
@@ -58,7 +58,7 @@ export async function handleCreateServer(request: Request, env: Env, payload: Au
         ).bind(serverId, `Sunucuya hoş geldiniz! ${serverName}`, generalChannelId),
 
         // 5. CHANNELS: Varsayılan Kanalı Ekleme
-        env.BAYKUS_DB.prepare("INSERT INTO channels (channel_id, server_id, channel_type_id, channel_name, created_at) VALUES (?, ?, ?, 'genel', ?)").bind(generalChannelId, serverId, defaultTypeTextId, creationTime),
+        env.BAYKUS_DB.prepare("INSERT INTO channels (channel_id, server_id, channel_type_id, channel_name, created_at, deleted_at) VALUES (?, ?, ?, 'genel', ?, NULL)").bind(generalChannelId, serverId, defaultTypeTextId, creationTime),
         
         // 6. CHANNEL_DETAILS: Varsayılan Kanal Konfigürasyonunu Ekleme (YENİ EKLENDİ)
         env.BAYKUS_DB.prepare(
@@ -67,9 +67,9 @@ export async function handleCreateServer(request: Request, env: Env, payload: Au
         
         // 7. MEMBER_ROLES: Owner'a Owner Rolünü Atama
         env.BAYKUS_DB.prepare(
-                // 🚨 DÜZELTME: member_role_id (PK) eklendi
                 "INSERT INTO member_roles (member_role_id, user_id, role_id, server_id, assigned_at, left_at) VALUES (?, ?, ?, ?, ?, NULL)"
             ).bind(ownerMemberRoleId, ownerId, ownerRoleId, serverId, creationTime),
+
         // 8. CHANNEL_MEMBERS: Owner'ı varsayılan kanala üye yapma
         env.BAYKUS_DB.prepare("INSERT INTO channel_members (channel_id, user_id, joined_at, left_at) VALUES (?, ?, ?, NULL)")
             .bind(generalChannelId, ownerId, creationTime)
