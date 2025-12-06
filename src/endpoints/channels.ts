@@ -26,7 +26,7 @@ export async function handleCreateChannel(request: Request, env: Env, payload: A
     try {
         const { serverId, channelName, typeId } = await request.json() as CreateChannelBody;
         const userId = payload.userId;
-        const creationTimeFunc = "datetime('now')";
+        const creationTimeFunc = new Date().toISOString();
 
         if (!serverId || !channelName || !typeId) {
             return new Response(JSON.stringify({ error: "Sunucu/Kanal adı veya tip bilgisi eksik." }), { status: 400 });
