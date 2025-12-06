@@ -1,69 +1,103 @@
+// src/endpoints/friends.ts
+
 import { Env } from '../types';
 import { AuthPayload } from '../auth/jwt'; 
 
-// Beklenen JSON yapıları
-interface AddFriendBody {
-    receiverUsername: string;
-}
+// --- GEREKLİ INTERFACE VE SABİTLER ---
+
+// NOT: Action tipi, UPDATE/UNFRIEND için tek bir fonksiyonda birleştirilmiştir.
+interface AddFriendBody { receiverUsername: string; }
 interface UpdateFriendBody {
-    targetUserId: string;
-    newStatus: 'accepted' | 'rejected' | 'blocked'; 
+    targetUsername: string; 
+    action: 'accept' | 'reject' | 'block' | 'unfriend'; // Yeni durum eylemleri
 }
 
-// Bu interface, Worker ortamında 'D1RunResult' olarak kabul edilen yapıyı temsil eder.
-interface D1WriteResult {
-    success: boolean;
-    error?: string;
-    // D1'in etkilenen satır sayısını döndürdüğü alan
-    changes: number; 
-    // Bazı Workers ortamlarında 'meta' objesi altında gelir.
-    meta?: { changes: number }; 
-}
+// friends_status tablosundaki sabit ID'ler (Veri Bütünlüğü Kontratı)
+const STATUS_IDS = {
+    PENDING:    'FRIEND_PENDING',
+    ACCEPTED:   'FRIEND_ACCEPTED',
+    REJECTED:   'FRIEND_REJECTED',   // Reddetme ve İptal/Çıkarma (Arşivleme)
+    BLOCKED:    'FRIEND_BLOCKED',
+    // UNFRIENDED: 'FRIEND_UNFRIENDED' (Dört durum kısıtlamasına uyum için REJECTED kullanıldı)
+};
 
-// D1 friends tablosundaki geçerli durumlar
-const VALID_ACTIONS = ['accepted', 'rejected', 'blocked']; 
 
-// --- 1. ARKADAŞLIK İSTEĞİ GÖNDERME (/api/friends/add) ---
-export async function handleAddFriend(request: Request, env: Env, payload: AuthPayload): Promise<Response> {
-   
-    // GÜVENLİK KONTROLÜ
-    if (!payload || !payload.userId) {
-         // Eğer JWT doğrulandıysa ama payload boşsa, Middleware doğru çalışmıyor demektir.
-         console.error("JWT PAYLOAD'I BOŞ GELDİ.");
-         return new Response(JSON.stringify({ error: "Oturum verisi eksik." }), { status: 403 });
-    }
+// --- YARDIMCI FONKSİYON: KULLANICI ID'LERİNİ ÇEKME VE SIRALAMA ---
+// (Veritabanındaki Composite PK'ya uygunluk için kritik)
+async function getSortedUserIds(env: Env, currentUsername: string, targetUsername: string): Promise<{ user1: string, user2: string, receiverId: string } | null> {
     
-    // Eğer buraya gelindiyse, payload.userId güvenli bir şekilde kullanılabilir.
-    const senderId = payload.userId;
-   
-    // ... (Mantık 1: Kullanıcı bulma ve 'pending' kaydı) ...
+    const [currentUserResult, targetUserResult] = await Promise.all([
+        env.BAYKUS_DB.prepare("SELECT user_id FROM users WHERE username = ?").bind(currentUsername).first<{user_id: string}>(),
+        env.BAYKUS_DB.prepare("SELECT user_id FROM users WHERE username = ?").bind(targetUsername).first<{user_id: string}>(),
+    ]);
+
+    const currentId = currentUserResult?.user_id;
+    const targetId = targetUserResult?.user_id;
+
+    if (!currentId || !targetId) return null;
+
+    // Composite Primary Key için ID'leri sırala: (user1 < user2)
+    const user1 = currentId < targetId ? currentId : targetId;
+    const user2 = currentId > targetId ? currentId : targetId;
+
+    return { user1, user2, receiverId: targetId };
+}
+
+
+// ------------------------------------------------------------------
+// 1. ARKADAŞLIK İSTEĞİ GÖNDERME (/api/friends/add)
+// ------------------------------------------------------------------
+export async function handleAddFriend(request: Request, env: Env, payload: AuthPayload): Promise<Response> {
     try {
         const { receiverUsername } = (await request.json()) as AddFriendBody;
+        const currentUsername = payload.username; 
         
-        // ... (Kullanıcı doğrulama ve ID bulma mantığı) ...
-        const senderId = payload.userId;
-        const receiverResult = await env.BAYKUS_DB.prepare("SELECT id FROM users WHERE username = ?").bind(receiverUsername).first('id');
-        if (!receiverResult) {
-            return new Response(JSON.stringify({ error: "Kullanıcı bulunamadı." }), { status: 404 });
+        const ids = await getSortedUserIds(env, currentUsername, receiverUsername);
+        if (!ids) {
+            return new Response(JSON.stringify({ error: "Kullanıcı adı/adları geçersiz." }), { status: 404 });
         }
-        const receiverId = receiverResult as string;
+        const { user1, user2, receiverId } = ids;
+        const now = new Date().toISOString(); 
 
-        // ID'leri sıralama (UNIQUE kısıtlaması için user1 < user2)
-        const user1 = senderId < receiverId ? senderId : receiverId;
-        const user2 = senderId > receiverId ? senderId : receiverId;
+        // 1. Mevcut durumu kontrol etme
+        const checkResult = await env.BAYKUS_DB.prepare("SELECT status_id FROM friends WHERE user_id = ? AND friend_id = ?").bind(user1, user2).first('status_id');
         
-        // Mevcut durumu kontrol etme
-        const checkResult = await env.BAYKUS_DB.prepare("SELECT status FROM friends WHERE user_id = ? AND friend_id = ?").bind(user1, user2).first('status');
         if (checkResult) {
+            // Zaten bir ilişki varsa (PENDING, ACCEPTED, BLOCKED, REJECTED), tekrar gönderilemez.
             return new Response(JSON.stringify({ error: `Arkadaşlık isteği zaten ${checkResult} durumunda.` }), { status: 409 });
         }
 
-        // Arkadaşlık İsteğini Kaydetme
+        // 2. Arkadaşlık İsteğini Kaydetme (INSERT)
         await env.BAYKUS_DB.prepare(
-            "INSERT INTO friends (id, user_id, friend_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)"
-        ).bind(crypto.randomUUID(), user1, user2, 'pending', new Date().toISOString(), new Date().toISOString()).run();
+            // created_at ve updated_at alanları eklendi.
+            "INSERT INTO friends (user_id, friend_id, status_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)"
+        ).bind(user1, user2, STATUS_IDS.PENDING, now, now).run();
 
-        return new Response(JSON.stringify({ message: "Arkadaşlık isteği gönderildi.", receiverId: receiverId }), { status: 201 });
+        // NDO yayını (İsteğin gönderildiğini bildirir)
+        const notificationPayload = {
+            type: "FRIEND_STATUS_UPDATE",
+            data: {
+                action: "REQUEST", // ACCEPT, REJECT, BLOCK, UNFRIEND
+                statusId: STATUS_IDS.PENDING,       // FRIEND_ACCEPTED, FRIEND_REJECTED, vb.
+                initiatorId: payload.userId,   // İşlemi yapan kişi
+                targetId: receiverId,     // Hedef kişi
+                timestamp: Date.now()
+            }
+        };
+
+        const notificationId = env.NOTIFICATION.idFromName("global");
+        const notificationStub = env.NOTIFICATION.get(notificationId);
+        
+        // NDO'ya yayın (Background process)
+        await notificationStub.fetch("/presence", { 
+            method: "POST",
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(notificationPayload),
+        }).catch(e => console.error(`Arkadaş durumu bildirimi yayınlanırken hata oluştu:`, e));
+
+
+
+        return new Response(JSON.stringify({ message: "Arkadaşlık isteği gönderildi.", receiverId }), { status: 201 });
 
     } catch (error) {
         console.error("Arkadaş ekleme hatası:", error);
@@ -72,111 +106,110 @@ export async function handleAddFriend(request: Request, env: Env, payload: AuthP
 }
 
 
-// --- 2. ARKADAŞLIK DURUMU GÜNCELLEME (/api/friends/update) ---
+// ------------------------------------------------------------------
+// 2. ARKADAŞLIK DURUMU GÜNCELLEME (/api/friends/update) - Soft Delete/Arşivleme için
+// ------------------------------------------------------------------
 export async function handleUpdateFriendStatus(request: Request, env: Env, payload: AuthPayload): Promise<Response> {
     try {
-        const { targetUserId, newStatus } = (await request.json()) as UpdateFriendBody;
-        const currentUserId = payload.userId;
+        const { targetUsername, action } = (await request.json()) as UpdateFriendBody;
+        const currentUsername = payload.username;
+         const currentUserId = payload.userId; 
         
-        if (!targetUserId || !VALID_ACTIONS.includes(newStatus)) {
-            return new Response(JSON.stringify({ error: "Geçersiz kullanıcı ID'si veya eylem." }), { status: 400 });
+        if (!targetUsername || !['accept', 'reject', 'block', 'unfriend'].includes(action)) {
+            return new Response(JSON.stringify({ error: "Geçersiz kullanıcı adı veya eylem." }), { status: 400 });
         }
-
-        const user1 = currentUserId < targetUserId ? currentUserId : targetUserId;
-        const user2 = currentUserId > targetUserId ? currentUserId : targetUserId;
-        
-        if (newStatus === 'rejected') {
-            // REDDETME EYLEMİ: Kaydı D1'den sil (status kısıtlamasını ihlal etmemek için)
-            const deleteQuery = env.BAYKUS_DB.prepare(
-                 `DELETE FROM friends WHERE user_id = ? AND friend_id = ? AND status = 'pending'`
-            );
-            const result = await deleteQuery.bind(user1, user2).run() ;
-            // Düzeltme: Sonucu D1'in tipinden 'changes' alanını güvenli şekilde çekeriz.
-
-            const changes = (result as any).changes || (result as any).meta.changes || 0;
-
-            if (changes === 0) {
-                 return new Response(JSON.stringify({ error: "Reddedilecek bekleyen istek bulunamadı." }), { status: 404 });
-            }
-            
-            return new Response(JSON.stringify({ message: "İstek başarıyla reddedildi.", status: 'rejected' }), { status: 200 });
-       }
-         
-         
-         else if (newStatus === 'accepted') {
-            // KABUL ETME EYLEMİ: Durumu 'pending'ten 'accepted'e çevir.
-            const updateQuery = env.BAYKUS_DB.prepare(
-                `UPDATE friends SET status = ?, updated_at = ? WHERE user_id = ? AND friend_id = ? AND status = 'pending'`
-            );
-            const result = (await updateQuery.bind(newStatus, new Date().toISOString(), user1, user2).run()) ;
-            const changes = (result as any).changes || (result as any).meta.changes || 0;
-            if (changes === 0)  {
-                 return new Response(JSON.stringify({ error: "Kabul edilecek bekleyen istek bulunamadı." }), { status: 404 });
-             }
-
-            return new Response(JSON.stringify({ message: "Arkadaşlık isteği kabul edildi.", status: 'accepted' }), { status: 200 });
-        }
-
-
-        else if (newStatus === 'blocked') { 
-    // YENİ EKLENEN BLOCKED MANTIĞI: Var olan ilişkiyi 'blocked' durumuna günceller.
-            const blockQuery = env.BAYKUS_DB.prepare(
-            `UPDATE friends SET status = ?, updated_at = ? WHERE (user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)`
-            );
-             // Hem normal sıralamayı (user1, user2) hem de ters sıralamayı (user2, user1) kontrol ederek güncelleriz.
-            const result = (await blockQuery.bind(newStatus, new Date().toISOString(), user1, user2, user2, user1).run());
-            const changes =(result as any).changes || (result as any).meta.changes || 0;
-                if (changes === 0) {
-                // Eğer güncellenen bir kayıt yoksa (yani yeni engelleme)
-                    return new Response(JSON.stringify({ error: "Engellenecek mevcut bir ilişki bulunamadı." }), { status: 404 });
-                }
-        return new Response(JSON.stringify({ message: "Kullanıcı başarıyla engellendi.", status: 'blocked' }), { status: 200 });
-        }
-
-        return new Response(JSON.stringify({ message: `Durum güncellendi: ${newStatus}` }), { status: 200 });
-
-    } 
     
-    catch (error) {
-        console.error("Durum güncelleme hatası:", error);
-        return new Response(JSON.stringify({ error: "Sunucu hatası." }), { status: 500 });
-    }
-}
 
+        const ids = await getSortedUserIds(env, currentUsername, targetUsername);
+        if (!ids) return new Response(JSON.stringify({ error: "Hedef kullanıcı bulunamadı." }), { status: 404 });
+        const { user1, user2 } = ids;
+        const now = new Date().toISOString();
 
-// --- 1. ARKADAŞLIĞI SONLANDIRMA (/api/friends/add) ---
+        let targetStatus: string;
+        let requiredStatus: string[] = []; // İşlemin yapılabilmesi için kaydın hangi durumda olması gerekir.
 
-export async function handleUnfriend(request: Request, env: Env, payload: AuthPayload): Promise<Response> {
-    try {
-        const { targetUserId } = (await request.json()) as { targetUserId: string };
-        const currentUserId = payload.userId;
-
-        if (!targetUserId || targetUserId === currentUserId) {
-            return new Response(JSON.stringify({ error: "Geçerli bir kullanıcı ID'si gerekli." }), { status: 400 });
+        // --- İŞLEM MANTIĞI VE GEÇERLİ DURUM KONTROLLERİ ---
+        switch (action) {
+            case 'accept':
+                targetStatus = STATUS_IDS.ACCEPTED;
+                requiredStatus = [STATUS_IDS.PENDING]; // Kabul sadece beklemede olanlara yapılır.
+                break;
+            case 'reject':
+                targetStatus = STATUS_IDS.REJECTED;
+                requiredStatus = [STATUS_IDS.PENDING]; // Red sadece beklemede olanlara yapılır (Arşivleme).
+                break;
+            case 'unfriend':
+                targetStatus = STATUS_IDS.REJECTED; // Arkadaşlığı sonlandırma (Arşivleme).
+                requiredStatus = [STATUS_IDS.ACCEPTED]; // Unfriend sadece kabul edilmiş olana yapılır.
+                break;
+            case 'block':
+                targetStatus = STATUS_IDS.BLOCKED;
+                // Engelleme, hem PENDING hem de ACCEPTED ilişkileri üzerine yapılabilir.
+                requiredStatus = [STATUS_IDS.PENDING, STATUS_IDS.ACCEPTED]; 
+                break;
+            default:
+                return new Response(JSON.stringify({ error: "Geçersiz eylem." }), { status: 400 });
         }
 
-        // D1 kısıtlamasına uymak için ID'leri sırala
-        const user1 = currentUserId < targetUserId ? currentUserId : targetUserId;
-        const user2 = currentUserId > targetUserId ? currentUserId : targetUserId;
+
+        // Güncelleme Sorgusu (Soft Delete/Arşivleme)
+        const updateQuery = env.BAYKUS_DB.prepare(`
+            UPDATE friends 
+            SET status_id = ?, updated_at = ? 
+            WHERE user_id = ? 
+              AND friend_id = ? 
+              AND status_id IN (${requiredStatus.map(() => '?').join(',')})
+        `);
         
-        // Sadece 'accepted' (kabul edilmiş) veya 'blocked' (engellenmiş) ilişkileri siliyoruz
-        // 'pending' durumundakileri handleUpdateStatus yönetmeli.
-        const deleteQuery = env.BAYKUS_DB.prepare(
-            `DELETE FROM friends 
-             WHERE user_id = ? AND friend_id = ? AND status IN ('accepted', 'blocked')`
-        );
+        // Bind değerleri: [Yeni Status, Güncel Zaman, User1, User2, ...Required Statuses]
+        const bindValues = [targetStatus, now, user1, user2, ...requiredStatus];
         
-        const result = await deleteQuery.bind(user1, user2).run();
-        const changes = (result as any).changes || 0;
+        const result = (await updateQuery.bind(...bindValues).run());
+        const changes = (result as any).changes || (result as any).meta.changes || 0;
 
         if (changes === 0) {
-            return new Response(JSON.stringify({ error: "Aktif bir arkadaşlık ilişkisi bulunamadı." }), { status: 404 });
+            return new Response(JSON.stringify({ 
+                error: `Eylem için uygun (aktif/bekleyen) ilişki bulunamadı.`,
+                currentAction: action 
+            }), { status: 404 });
         }
 
-        return new Response(JSON.stringify({ message: "Arkadaşlıktan çıkarıldı." }), { status: 200 });
+        // NDO yayını (Durum değişikliği bildirimi)
+            const notificationPayload = {
+            type: "FRIEND_STATUS_UPDATE",
+            data: {
+                // Aksiyon: accept, reject, block, unfriend (Büyük harf olarak iletilir)
+                action: action.toUpperCase(), 
+                // Sonuç Durumu: FRIEND_ACCEPTED, FRIEND_REJECTED, vs.
+                statusId: targetStatus,       
+                
+                // İlişkinin her iki tarafı için de kimlik bilgileri:
+                initiatorId: currentUserId,   // İşlemi yapan kişinin ID'si
+                targetId: ids.receiverId,     // Hedef kişinin ID'si
+                
+                // İlişkinin D1'deki benzersiz anahtarları (bu, front-end'in kaydı bulmasını kolaylaştırır):
+                userId1: user1,
+                userId2: user2,
+
+                timestamp: Date.now()
+            }
+        };
+
+        const notificationId = env.NOTIFICATION.idFromName("global");
+        const notificationStub = env.NOTIFICATION.get(notificationId);
+        
+        // NDO'ya yayınlama
+        await notificationStub.fetch("/presence", { 
+            method: "POST",
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(notificationPayload),
+        }).catch(e => console.error(`Arkadaş durumu bildirimi yayınlanırken hata oluştu:`, e));
+
+
+        return new Response(JSON.stringify({ message: `İlişki başarıyla güncellendi: ${action}.`, status: targetStatus }), { status: 200 });
 
     } catch (error) {
-        console.error("Çıkarma hatası:", error);
+        console.error("Durum güncelleme hatası:", error);
         return new Response(JSON.stringify({ error: "Sunucu hatası." }), { status: 500 });
     }
 }
