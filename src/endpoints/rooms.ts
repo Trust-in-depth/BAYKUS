@@ -122,15 +122,7 @@ export async function handleJoinServer(request: Request, env: Env, payload: Auth
     const memberCheck = await env.BAYKUS_DB.prepare(
         "SELECT left_at FROM server_members WHERE server_id = ? AND user_id = ?"
     ).bind(serverId, userId).first<{ left_at: string | null }>();
-
-
-    if (memberCheck) {
-        if (memberCheck.left_at === null) {
-            // ZATEN AKTİF: İşlem yapmaya gerek yok, başarıyla dön.
-            return new Response(JSON.stringify({ message: "Sunucuda zaten aktiftiniz.", serverId }), { status: 200 });
-        }
             
-
         // Rol ve Kanal atamaları için gerekli bilgileri al
         const defaultRole = await env.BAYKUS_DB.prepare(
             "SELECT role_id FROM roles WHERE server_id = ? AND is_default = TRUE"
@@ -145,38 +137,58 @@ export async function handleJoinServer(request: Request, env: Env, payload: Auth
         }
 
 
-        const batchStatements = [];
+    const batchStatements = [];
+const isReturningMember = memberCheck && memberCheck.left_at !== null;
+const isNewMember = !memberCheck; // Kayıt hiç yoktu.
 
-        if (memberCheck) {
-            // Kayıt VARDI (pasif). UPDATE ile AKTİF hale getir (left_at = NULL).
-            // NOT: PK değişmediği için sadece left_at ve joined_at güncellenir.
-            batchStatements.push(env.BAYKUS_DB.prepare(
-                "UPDATE server_members SET left_at = NULL, joined_at = ? WHERE server_id = ? AND user_id = ?"
-            ).bind(creationTime, serverId, userId)); 
-            
-        } else {
-            // Kayıt HİÇ YOKTU. YENİ KAYIT EKLE (İlk katılım)
-            // server_members (server_id, user_id) COMPOSITE PK kullandığı için id'ye ihtiyacı yok.
-            batchStatements.push(env.BAYKUS_DB.prepare(
-                "INSERT INTO server_members (server_id, user_id, joined_at, left_at) VALUES (?, ?, ?, NULL)"
-            ).bind(serverId, userId, creationTime));
-            
-        // 2. YENİ ROL ATAMASI (Member Rolü)
-            batchStatements.push(env.BAYKUS_DB.prepare(
-                "INSERT INTO member_roles (user_id, role_id, server_id) VALUES (?, ?, ?)"
-            ).bind(userId, defaultRole, serverId));
-        }
 
-        // 3. YENİ KANAL ÜYELİĞİ ATAMASI (Genel Kanal)
-        // Bu, kullanıcının kanala ilk kez katıldığından emin olmak için bir INSERT OR IGNORE gibi davranır.
-        batchStatements.push(env.BAYKUS_DB.prepare(
-            "INSERT INTO channel_members (channel_id, user_id, joined_at, left_at) VALUES (?, ?, ?, NULL)"
-        ).bind(defaultChannel, userId, creationTime));
-        
+// --- AKIŞ 1: ZATEN AKTİF ---
+if (memberCheck && memberCheck.left_at === null) {
+    // ZATEN AKTİF: İşlem yapmaya gerek yok, başarıyla dön.
+    return new Response(JSON.stringify({ message: "Sunucuda zaten aktiftiniz.", serverId }), { status: 200 });
+}
 
-        // 4. BATCH İŞLEMİNİ ÇALIŞTIRMA
-        await env.BAYKUS_DB.batch(batchStatements);
-    }
+// --- AKIŞ 2 & 3: PASİF VEYA YENİ KATILIM (Bu durumda Batch çalışır) ---
+
+if (isReturningMember) {
+    // 1A. PASİF (Geri Dönüş): Soft Un-Delete (UPDATE)
+    // Server_members kaydını tekrar aktif et.
+    batchStatements.push(env.BAYKUS_DB.prepare(
+        "UPDATE server_members SET left_at = NULL, joined_at = ? WHERE server_id = ? AND user_id = ?"
+    ).bind(creationTime, serverId, userId)); 
+
+    // 2A. CHANNEL_MEMBERS: Kanala yeniden ekle (eski pasif kaydı güncellemek yerine yeni aktif kayıt eklenir, bu daha temizdir)
+    batchStatements.push(env.BAYKUS_DB.prepare(
+        "INSERT INTO channel_members (channel_id, user_id, joined_at, left_at) VALUES (?, ?, ?, NULL)"
+    ).bind(defaultChannel, userId, creationTime));
+
+    // 3A. MEMBER_ROLES: Rolleri yeniden ata (LeaveServer'da sildiğimiz için zorunlu INSERT)
+    batchStatements.push(env.BAYKUS_DB.prepare(
+        "INSERT INTO member_roles (user_id, role_id, server_id) VALUES (?, ?, ?)"
+    ).bind(userId, defaultRole, serverId));
+
+} else if (isNewMember) {
+    // 1B. YENİ ÜYE: Tüm kayıtları INSERT et.
+    
+    // a) server_members INSERT
+    batchStatements.push(env.BAYKUS_DB.prepare(
+        "INSERT INTO server_members (server_id, user_id, joined_at, left_at) VALUES (?, ?, ?, NULL)"
+    ).bind(serverId, userId, creationTime));
+    
+    // b) MEMBER_ROLES INSERT
+    batchStatements.push(env.BAYKUS_DB.prepare(
+        "INSERT INTO member_roles (user_id, role_id, server_id) VALUES (?, ?, ?)"
+    ).bind(userId, defaultRole, serverId));
+    
+    // c) CHANNEL_MEMBERS INSERT
+    batchStatements.push(env.BAYKUS_DB.prepare(
+        "INSERT INTO channel_members (channel_id, user_id, joined_at, left_at) VALUES (?, ?, ?, NULL)"
+    ).bind(defaultChannel, userId, creationTime));
+}
+
+// --- BATCH ÇALIŞTIRMA VE NDO YAYINI ---
+if (batchStatements.length > 0) {
+    await env.BAYKUS_DB.batch(batchStatements);
 
         // 2. NDO BİLDİRİMİ GÖNDER (JOIN)
         const messagePayload = {
@@ -203,12 +215,16 @@ export async function handleJoinServer(request: Request, env: Env, payload: Auth
         
         // 3. BAŞARILI YANIT
         return new Response(JSON.stringify({ message: "Sunucuya başarıyla katıldınız.", serverId }), { status: 200 });
+    }
+
 
     } catch (error) {
         console.error("Sunucuya katılma hatası:", error);
         return new Response(JSON.stringify({ error: "Sunucu hatası." }), { status: 500 });
     }
 }
+
+
 
 
 
