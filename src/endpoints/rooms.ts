@@ -251,9 +251,17 @@ export async function handleLeaveServer(request: Request, env: Env, payload: Aut
                 "DELETE FROM member_roles WHERE user_id = ? AND server_id = ?"
             ).bind(userId, serverId)
         ];
+
+        // 3. MEMBER_ROLES: Kullanıcının bu sunucudaki tüm rollerini sil (Rol atamalarını temizle)
+            // Kullanıcı ayrıldığı anda rolleri taşımamalıdır.
+            env.BAYKUS_DB.prepare(
+                "DELETE FROM roles WHERE user_id = ? AND server_id = ?"
+            ).bind(userId, serverId)
         
         // Tüm işlemleri atomik olarak çalıştır
-        await env.BAYKUS_DB.batch(batchStatements);        
+        await env.BAYKUS_DB.batch(batchStatements);      
+        
+        
         // --- 2. NDO BİLDİRİMİ GÖNDER (LEAVE) ---
         // Kayıt güncellense de güncellenmese de NDO yayını yapılır (UX için).
         const messagePayload = {
