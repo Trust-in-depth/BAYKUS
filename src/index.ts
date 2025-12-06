@@ -117,7 +117,7 @@ openapi.delete("/api/tasks/:taskSlug", TaskDelete);
 // NOT: Bu rotalar, tip güvenliği için artık raw Request yerine AppContext kullanıyor.
 
 // Sunucu/Oda Oluşturma
-app.post("/api/rooms/create", async (c: AppContext) => {
+app.post("/api/servers/create", async (c: AppContext) => {
     const payload = c.get('userPayload');
     return handleCreateServer(c.req.raw, c.env, payload);
 });

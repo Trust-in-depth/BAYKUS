@@ -131,8 +131,17 @@ export async function handleJoinServer(request: Request, env: Env, payload: Auth
              return new Response(JSON.stringify({ error: "Sunucu varsayılan rollerini/kanallarını bulamıyor." }), { status: 500 });
         }
 
+    const serverStatus = await env.BAYKUS_DB.prepare(
+        "SELECT deleted_at FROM servers WHERE server_id = ?"
+    ).bind(serverId).first<{ deleted_at: string | null }>();
 
-    const batchStatements = [];
+    if (!serverStatus || serverStatus.deleted_at !== null) {
+        // Sunucu ya yok ya da silinmiş (arşivlenmiş).
+        return new Response(JSON.stringify({ error: "Sunucu bulunamadı veya silinmiştir." }), { status: 404 });
+    }
+
+
+const batchStatements = [];
 const isReturningMember = memberCheck && memberCheck.left_at !== null;
 const isNewMember = !memberCheck; // Kayıt hiç yoktu.
 
@@ -269,14 +278,15 @@ export async function handleLeaveServer(request: Request, env: Env, payload: Aut
             // Kullanıcı ayrıldığı anda rolleri taşımamalıdır.
             env.BAYKUS_DB.prepare(
                 "DELETE FROM member_roles WHERE user_id = ? AND server_id = ?"
-            ).bind(userId, serverId)
-        ];
-
+            ).bind(userId, serverId),
+            
         // 3. MEMBER_ROLES: Kullanıcının bu sunucudaki tüm rollerini sil (Rol atamalarını temizle)
             // Kullanıcı ayrıldığı anda rolleri taşımamalıdır.
             env.BAYKUS_DB.prepare(
                 "DELETE FROM roles WHERE user_id = ? AND server_id = ?"
             ).bind(userId, serverId)
+        ];
+
         
         // Tüm işlemleri atomik olarak çalıştır
         await env.BAYKUS_DB.batch(batchStatements);      
@@ -311,3 +321,53 @@ export async function handleLeaveServer(request: Request, env: Env, payload: Aut
     }
 }
 
+
+
+// src/endpoints/rooms.ts (handleDeleteServer - SOFT DELETE İLE GÜNCELLENDİ)
+
+export async function handleDeleteServer(request: Request, env: Env, payload: AuthPayload): Promise<Response> {
+    try {
+        const { serverId } = await request.json() as { serverId: string };
+        const userId = payload.userId;
+        const deletionTime = new Date().toISOString();
+        
+        if (!serverId) {
+            return new Response(JSON.stringify({ error: "Sunucu ID'si gerekli." }), { status: 400 });
+        }
+
+        // --- ADIM 1: YETKİ KONTROLÜ (Owner Kontrolü) ---
+        const serverOwner = await env.BAYKUS_DB.prepare(
+            "SELECT owner_id, deleted_at FROM servers WHERE server_id = ?"
+        ).bind(serverId).first<{ owner_id: string, deleted_at: string | null }>();
+
+        // Sunucu hiç yoksa veya zaten silinmişse 404 dön.
+        if (!serverOwner || serverOwner.deleted_at !== null) {
+            return new Response(JSON.stringify({ error: "Sunucu bulunamadı veya daha önce silinmiş." }), { status: 404 });
+        }
+
+        // Kullanıcı Owner değilse (veya Admin değilse)
+        if (serverOwner.owner_id !== userId) {
+            return new Response(JSON.stringify({ error: "Sunucuyu silme yetkiniz yok. Sadece kurucu silebilir." }), { status: 403 });
+        }
+
+        // --- ADIM 2: SOFT DELETE (Sunucuyu pasif hale getir) ---
+        // SADECE servers tablosu güncellenir. Alt tablolar (channel_members, roles, R2) korunur.
+        const updateStatement = env.BAYKUS_DB.prepare(
+            "UPDATE servers SET deleted_at = ? WHERE server_id = ?"
+        ).bind(deletionTime, serverId);
+
+        await updateStatement.run(); // Tek bir UPDATE işlemi
+
+        
+        // --- ADIM 3: NDO BİLDİRİMİ (Sunucunun pasifleştiğini herkese duyur) ---
+        // (NDO yayını kodunuzu buraya eklemeyi unutmayın)
+
+        
+        // --- ADIM 4: BAŞARILI YANIT ---
+        return new Response(JSON.stringify({ message: "Sunucu başarıyla silindi ve arşivlendi. Veriler log amaçlı saklanmaya devam edecektir." }), { status: 200 });
+
+    } catch (error) {
+        console.error("Sunucu silme hatası:", error);
+        return new Response(JSON.stringify({ error: "Sunucu silme işlemi başarısız oldu." }), { status: 500 });
+    }
+}
