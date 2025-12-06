@@ -151,7 +151,7 @@ export async function handleUpdateFriendStatus(request: Request, env: Env, paylo
         switch (action) {
             case 'accept':
                 targetStatus = STATUS_IDS.ACCEPTED;
-                requiredStatus = [STATUS_IDS.PENDING]; // Kabul sadece beklemede olanlara yapılır.
+                requiredStatus = [STATUS_IDS.PENDING,STATUS_IDS.UNFRIENDED]; // Kabul sadece beklemede olanlara yapılır.
                 break;
             case 'reject':
                 targetStatus = STATUS_IDS.REJECTED;
@@ -164,7 +164,7 @@ export async function handleUpdateFriendStatus(request: Request, env: Env, paylo
             case 'block':
                 targetStatus = STATUS_IDS.BLOCKED;
                 // Engelleme, hem PENDING hem de ACCEPTED ilişkileri üzerine yapılabilir.
-                requiredStatus = [STATUS_IDS.PENDING, STATUS_IDS.ACCEPTED]; 
+                requiredStatus = [STATUS_IDS.PENDING, STATUS_IDS.ACCEPTED,STATUS_IDS.UNFRIENDED]; 
                 break;
             default:
                 return new Response(JSON.stringify({ error: "Geçersiz eylem." }), { status: 400 });
