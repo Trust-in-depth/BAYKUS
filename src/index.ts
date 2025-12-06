@@ -20,7 +20,8 @@ import { handleCreateGroup } from "./endpoints/groups";
 import { handleCreateChannel } from "./endpoints/channels";
 import { handleUpdateChannel } from "./endpoints/channels";
 import { handleDeleteChannel } from "./endpoints/channels";
-
+import { handleCreateRole } from "./endpoints/roles";
+import { handleAssignRole } from "./endpoints/roles";
 
 
 // --- 2. TASK Importları ---
@@ -347,7 +348,17 @@ app.post("/api/channels/delete", async (c: AppContext) => {
     return handleDeleteChannel(c.req.raw, c.env, payload);
 });
 
-// ... (Diğer tüm mevcut DO rotaları benzer şekilde AppContext ile güncellenmeli ve /api/* altına taşınmalıdır.) ...
+// Yeni Rol Tanımlama Rotası (handleCreateRole)
+app.post("/api/roles/create", async (c: AppContext) => {
+    const payload = c.get('userPayload');
+    return handleCreateRole(c.req.raw, c.env, payload);
+});
+
+// Üyeye Rol Atama Rotası (handleAssignRole)
+app.post("/api/roles/assign", async (c: AppContext) => {
+    const payload = c.get('userPayload');
+    return handleAssignRole(c.req.raw, c.env, payload);
+});
 
 
 // --- 7. EXPORTLAR (DOĞRU VE TAM) ---
