@@ -38,6 +38,7 @@ export async function handleCreateServer(request: Request, env: Env, payload: Au
         const ownerRoleId = crypto.randomUUID();
         const memberRoleId = crypto.randomUUID();
         const generalChannelId = crypto.randomUUID();
+        const ownerMemberRoleId = crypto.randomUUID();
         // --- ADIM A: TEMEL KAYITLAR (Foreign Key'leri korumak için ilk olmalı) ---
 
 // --- ADIM 3: ATOMİK BATCH İŞLEMLERİ (Veri Bütünlüğü İçin) ---
@@ -65,9 +66,10 @@ export async function handleCreateServer(request: Request, env: Env, payload: Au
         ).bind(generalChannelId, "Bu, Baykuş sunucusunun genel sohbet kanalıdır.", 0),
         
         // 7. MEMBER_ROLES: Owner'a Owner Rolünü Atama
-        env.BAYKUS_DB.prepare("INSERT INTO member_roles (user_id, role_id, server_id) VALUES (?, ?, ?)")
-            .bind(ownerId, ownerRoleId, serverId),
-        
+        env.BAYKUS_DB.prepare(
+                // 🚨 DÜZELTME: member_role_id (PK) eklendi
+                "INSERT INTO member_roles (member_role_id, user_id, role_id, server_id, assigned_at, left_at) VALUES (?, ?, ?, ?, ?, NULL)"
+            ).bind(ownerMemberRoleId, ownerId, ownerRoleId, serverId, creationTime),
         // 8. CHANNEL_MEMBERS: Owner'ı varsayılan kanala üye yapma
         env.BAYKUS_DB.prepare("INSERT INTO channel_members (channel_id, user_id, joined_at, left_at) VALUES (?, ?, ?, NULL)")
             .bind(generalChannelId, ownerId, creationTime)
