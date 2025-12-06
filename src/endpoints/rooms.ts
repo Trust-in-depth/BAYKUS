@@ -358,10 +358,8 @@ export async function handleDeleteServer(request: Request, env: Env, payload: Au
                 "UPDATE channels SET deleted_at = ? WHERE server_id = ?"
             ).bind(deletionTime, serverId),
 
-            // 3. SERVER_DETAILS: Server detaylarını pasifleştir (Opsiyonel ama iyi uygulama)
-            env.BAYKUS_DB.prepare(
-                "UPDATE server_details SET deleted_at = ? WHERE server_id = ?"
-            ).bind(deletionTime, serverId),
+            // 3. SERVER_DETAILS: Bu satır KALDIRILDI, çünkü tablo deleted_at sütununa sahip değil.
+            // Bu tabloya erişim, servers tablosu üzerinden kontrol edilecektir.
             
             // 4. SERVER_MEMBERS: Tüm üyeleri sunucudan ayrılmış olarak işaretle (Kullanıcılar için LEAVE)
             env.BAYKUS_DB.prepare(
